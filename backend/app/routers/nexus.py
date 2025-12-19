@@ -379,9 +379,11 @@ async def chat(request: ChatRequest):
         generator,
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
             "X-Trace-ID": trace_id,
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
         },
     )
 
