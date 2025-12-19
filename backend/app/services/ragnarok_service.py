@@ -1,6 +1,9 @@
 """
 Nexus Assistant Unified - RAGNAROK Service
-Production-grade integration with circuit breaker, polling, and trace propagation.
+Production-grade Gateway Proxy with proper error propagation and unified polling.
+
+This service acts as a TRUE GATEWAY - the frontend never needs to know about
+RAGNAROK's internal ports or API schema. All polling happens through Nexus.
 """
 import asyncio
 import logging
@@ -13,10 +16,25 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import httpx
+from fastapi import HTTPException
 
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpen, get_circuit_breaker
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# CUSTOM EXCEPTIONS (for proper error propagation)
+# =============================================================================
+
+class RagnarokAPIError(HTTPException):
+    """
+    Exception that preserves RAGNAROK's HTTP status code.
+    This ensures 429 Rate Limits are passed through correctly.
+    """
+    def __init__(self, status_code: int, detail: str, headers: Optional[Dict[str, str]] = None):
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
+        self.ragnarok_status = status_code
 
 
 # =============================================================================
@@ -224,18 +242,27 @@ class RagnarokService:
 
         except httpx.HTTPStatusError as e:
             self.circuit_breaker.record_failure()
-            # Try to extract error detail from response
+            status_code = e.response.status_code
+
+            # Extract error detail from response
             error_detail = str(e)
             try:
                 error_json = e.response.json()
                 error_detail = error_json.get("detail", error_json.get("error", str(e)))
             except Exception:
                 error_detail = e.response.text or str(e)
+
             logger.error(
                 f"[ragnarok.submit] trace_id={trace_id} | "
-                f"HTTP error {e.response.status_code}: {error_detail}"
+                f"HTTP error {status_code}: {error_detail}"
             )
-            raise Exception(f"RAGNAROK API error ({e.response.status_code}): {error_detail}")
+
+            # CRITICAL: Preserve the original status code from RAGNAROK
+            # This ensures 429 Rate Limits, 400 Bad Requests, etc. are passed through
+            raise RagnarokAPIError(
+                status_code=status_code,
+                detail=error_detail
+            )
 
         except httpx.ReadTimeout:
             # ReadTimeout means RAGNAROK is working but slow (blocking API)
@@ -261,15 +288,25 @@ class RagnarokService:
                 f"[ragnarok.submit] trace_id={trace_id} | "
                 f"Connection error: {e}"
             )
-            raise Exception(f"Cannot connect to RAGNAROK at {self.base_url}: {e}")
+            raise RagnarokAPIError(
+                status_code=503,
+                detail=f"Cannot connect to RAGNAROK at {self.base_url}: {e}"
+            )
+
+        except RagnarokAPIError:
+            # Re-raise our custom exceptions as-is
+            raise
 
         except Exception as e:
             self.circuit_breaker.record_failure()
             logger.error(
                 f"[ragnarok.submit] trace_id={trace_id} | "
-                f"Error: {e}"
+                f"Unexpected error: {e}"
             )
-            raise
+            raise RagnarokAPIError(
+                status_code=500,
+                detail=f"Unexpected RAGNAROK error: {e}"
+            )
 
     def _start_polling(self, workflow_id: str, trace_id: Optional[str] = None):
         """Start background polling for workflow status"""

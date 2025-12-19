@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     JOB_RETENTION_HOURS: int = 24
     JOB_MAX_CONCURRENT: int = 5
 
+    # Trinity Market Intelligence
+    TRINITY_ENABLED: bool = True
+    TRINITY_SYSTEM_PATH: Optional[str] = None
+    TRINITY_TIMEOUT: int = 60
+
     @property
     def knowledge_path(self) -> Path:
         """Get knowledge directory path"""
