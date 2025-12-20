@@ -12,6 +12,7 @@ numpy>=1.24.0
 
 # HTTP client (for API mode)
 httpx>=0.25.0
+aiohttp>=3.9.0
 
 # Async utilities
 anyio>=4.0.0
@@ -19,3 +20,15 @@ anyio>=4.0.0
 # Utilities
 python-dotenv>=1.0.0
 python-multipart>=0.0.6
+
+# TTS Providers (VoiceoverMaster)
+elevenlabs>=0.2.0
+gtts>=2.3.0
+
+# Google Drive (VoiceoverMaster asset storage)
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+
+# Observability (VoiceoverMaster)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
