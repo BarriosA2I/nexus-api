@@ -231,7 +231,15 @@ class NexusBrain:
 
         # Try Anthropic first (use settings which loads .env)
         anthropic_key = settings.ANTHROPIC_API_KEY
-        logger.info(f"ANTHROPIC_API_KEY present: {bool(anthropic_key)}")
+        # Also check os.environ directly as fallback
+        import os
+        env_key = os.environ.get("ANTHROPIC_API_KEY")
+        logger.info(f"settings.ANTHROPIC_API_KEY present: {bool(anthropic_key)}")
+        logger.info(f"os.environ ANTHROPIC_API_KEY present: {bool(env_key)}")
+        # Use whichever is available
+        if not anthropic_key and env_key:
+            anthropic_key = env_key
+            logger.info("Using os.environ fallback for ANTHROPIC_API_KEY")
         if anthropic_key:
             logger.info(f"ANTHROPIC_API_KEY starts with: {anthropic_key[:20]}...")
 
