@@ -154,13 +154,204 @@ async def generate_contextual_response(
             "What kind of work is eating up most of your team's time right now?"
         )
 
-    # SERVICES - Focus on outcomes, not tech
+    # =========================================================================
+    # INDUSTRY-SPECIFIC RESPONSES - Check these FIRST before generic handlers
+    # =========================================================================
+    industry_examples = {
+        # Healthcare
+        "dental": (
+            "For dental practices, we typically automate:\n\n"
+            "• **Patient reminders** - Appointment confirmations, recall campaigns for cleanings\n"
+            "• **Insurance verification** - Pull eligibility before patients arrive\n"
+            "• **Review generation** - Automatically ask happy patients for Google reviews\n"
+            "• **New patient intake** - Digital forms that sync to your practice management system\n\n"
+            "What's eating up the most time for your front desk right now?"
+        ),
+        "medical": (
+            "For medical practices, we typically automate:\n\n"
+            "• **Patient intake** - Digital forms, insurance capture, consent signatures\n"
+            "• **Appointment management** - Reminders, confirmations, waitlist fills\n"
+            "• **Prior authorizations** - Automate the paperwork nightmare\n"
+            "• **Follow-up workflows** - Post-visit surveys, care plan reminders\n\n"
+            "What's the biggest admin headache in your practice right now?"
+        ),
+        "clinic": (
+            "For clinics, we typically automate:\n\n"
+            "• **Patient communication** - Reminders, follow-ups, recall campaigns\n"
+            "• **Intake workflows** - Digital forms, insurance verification\n"
+            "• **Review requests** - Automatically ask patients for feedback\n"
+            "• **Reporting** - Pull data from your EHR without manual exports\n\n"
+            "What's taking up too much of your staff's time?"
+        ),
+        # Real Estate
+        "real estate": (
+            "For real estate teams, we typically automate:\n\n"
+            "• **Lead qualification** - Score and route leads 24/7\n"
+            "• **Follow-up sequences** - Never let a lead go cold\n"
+            "• **Market reports** - Auto-generate CMAs and neighborhood stats\n"
+            "• **Transaction coordination** - Deadline tracking, document collection\n\n"
+            "Are you looking to handle more leads or streamline your back office?"
+        ),
+        "realtor": (
+            "For realtors, we typically automate:\n\n"
+            "• **Lead follow-up** - Instant response, qualification, scheduling\n"
+            "• **Market analysis** - Auto-generate CMAs when listings hit\n"
+            "• **Client updates** - Keep buyers and sellers in the loop automatically\n"
+            "• **Review requests** - Ask happy clients at closing\n\n"
+            "What's your biggest bottleneck - lead gen or transaction management?"
+        ),
+        # Legal
+        "law firm": (
+            "For law firms, we typically automate:\n\n"
+            "• **Intake qualification** - Screen potential clients 24/7\n"
+            "• **Document assembly** - Generate standard docs from templates\n"
+            "• **Client communication** - Case status updates, deadline reminders\n"
+            "• **Research summaries** - Pull relevant case law faster\n\n"
+            "What practice area are you in? That'll help me give better examples."
+        ),
+        "attorney": (
+            "For attorneys, we typically automate:\n\n"
+            "• **Client intake** - Qualify leads, collect docs, schedule consults\n"
+            "• **Document drafting** - First drafts of standard agreements\n"
+            "• **Deadline tracking** - Never miss a filing date\n"
+            "• **Billing prep** - Time entry assistance and invoice generation\n\n"
+            "Are you solo or part of a larger firm?"
+        ),
+        "lawyer": (
+            "For law practices, we typically automate:\n\n"
+            "• **Lead qualification** - Screen inquiries, book consults\n"
+            "• **Document automation** - Generate contracts, letters, filings\n"
+            "• **Client updates** - Keep clients informed without manual work\n"
+            "• **Research assistance** - Summarize case law and precedents\n\n"
+            "What type of law do you practice?"
+        ),
+        # E-commerce
+        "ecommerce": (
+            "For e-commerce brands, we typically automate:\n\n"
+            "• **Customer service** - Handle FAQs, order status, returns\n"
+            "• **Product descriptions** - Generate SEO-optimized copy at scale\n"
+            "• **Inventory alerts** - Reorder notifications, stockout prevention\n"
+            "• **Review management** - Respond to reviews, request new ones\n\n"
+            "What platform are you on - Shopify, WooCommerce, something else?"
+        ),
+        "shopify": (
+            "For Shopify stores, we typically automate:\n\n"
+            "• **Customer support** - Answer questions, track orders, process returns\n"
+            "• **Product content** - Descriptions, meta tags, alt text at scale\n"
+            "• **Abandoned cart** - Smart recovery sequences beyond basic emails\n"
+            "• **Review collection** - Post-purchase review requests\n\n"
+            "What's your biggest challenge - traffic, conversion, or operations?"
+        ),
+        # Agency
+        "agency": (
+            "For agencies, we typically automate:\n\n"
+            "• **Client reporting** - Pull data, generate insights, send automatically\n"
+            "• **Content creation** - First drafts of blog posts, social, ads\n"
+            "• **Competitive monitoring** - Track client competitors automatically\n"
+            "• **Lead qualification** - Score and route inbound inquiries\n\n"
+            "What kind of agency are you - marketing, creative, development?"
+        ),
+        # SaaS
+        "saas": (
+            "For SaaS companies, we typically automate:\n\n"
+            "• **Lead qualification** - Score trials, identify high-intent users\n"
+            "• **Onboarding** - Personalized sequences based on user behavior\n"
+            "• **Churn prevention** - Identify at-risk accounts early\n"
+            "• **Support triage** - Route tickets, suggest solutions\n\n"
+            "What stage are you at - pre-revenue, scaling, or established?"
+        ),
+        "software": (
+            "For software companies, we typically automate:\n\n"
+            "• **Demo scheduling** - Qualify and book prospects 24/7\n"
+            "• **User onboarding** - Behavior-triggered guidance\n"
+            "• **Support** - Answer common questions, escalate complex ones\n"
+            "• **Feedback analysis** - Summarize feature requests and bugs\n\n"
+            "Are you B2B or B2C?"
+        ),
+        # Hospitality
+        "restaurant": (
+            "For restaurants, we typically automate:\n\n"
+            "• **Reservations** - Handle bookings, confirmations, waitlist\n"
+            "• **Review management** - Respond to reviews, request new ones\n"
+            "• **Staff scheduling** - Optimize based on expected traffic\n"
+            "• **Inventory/ordering** - Track usage, auto-reorder supplies\n\n"
+            "What type of restaurant - casual, fine dining, fast casual?"
+        ),
+        "hotel": (
+            "For hotels, we typically automate:\n\n"
+            "• **Guest communication** - Pre-arrival, during stay, post-checkout\n"
+            "• **Review management** - Respond and request reviews\n"
+            "• **Upsell sequences** - Promote amenities and upgrades\n"
+            "• **Competitive monitoring** - Track rates and availability\n\n"
+            "What size property are you working with?"
+        ),
+        # Finance
+        "accounting": (
+            "For accounting firms, we typically automate:\n\n"
+            "• **Document collection** - Chase clients for missing docs\n"
+            "• **Data entry** - Extract from receipts, statements, invoices\n"
+            "• **Client communication** - Deadline reminders, status updates\n"
+            "• **Report generation** - Standard financial reports\n\n"
+            "Is this for tax season prep or year-round bookkeeping?"
+        ),
+        "financial": (
+            "For financial services, we typically automate:\n\n"
+            "• **Client onboarding** - KYC, document collection, account setup\n"
+            "• **Portfolio updates** - Auto-generate client reports\n"
+            "• **Compliance monitoring** - Track regulatory requirements\n"
+            "• **Lead qualification** - Score and route prospects\n\n"
+            "What area - wealth management, lending, insurance?"
+        ),
+        # Construction/Trades
+        "construction": (
+            "For construction companies, we typically automate:\n\n"
+            "• **Bid management** - Track opportunities, generate proposals\n"
+            "• **Project updates** - Keep clients informed automatically\n"
+            "• **Subcontractor coordination** - Scheduling, payments, docs\n"
+            "• **Safety compliance** - Track certifications and training\n\n"
+            "What type of construction - residential, commercial, specialty?"
+        ),
+        "contractor": (
+            "For contractors, we typically automate:\n\n"
+            "• **Lead follow-up** - Respond to inquiries, schedule estimates\n"
+            "• **Proposal generation** - Create quotes from templates\n"
+            "• **Project updates** - Keep homeowners in the loop\n"
+            "• **Review requests** - Ask happy customers for referrals\n\n"
+            "What trade are you in?"
+        ),
+        "plumber": (
+            "For plumbing businesses, we typically automate:\n\n"
+            "• **Dispatch optimization** - Route techs efficiently\n"
+            "• **Customer follow-up** - Maintenance reminders, review requests\n"
+            "• **Quote generation** - Standard pricing templates\n"
+            "• **Lead response** - Answer inquiries 24/7\n\n"
+            "Are you looking to grow or just run more efficiently?"
+        ),
+        "hvac": (
+            "For HVAC companies, we typically automate:\n\n"
+            "• **Maintenance reminders** - Seasonal tune-up campaigns\n"
+            "• **Dispatch routing** - Optimize tech schedules\n"
+            "• **Quote follow-up** - Chase pending proposals\n"
+            "• **Review collection** - Ask customers after service\n\n"
+            "What's your biggest pain point - lead gen or operations?"
+        ),
+    }
+
+    # Check for industry mentions FIRST
+    for industry, response in industry_examples.items():
+        if industry in message_lower:
+            return response
+
+    # =========================================================================
+    # GENERIC HANDLERS (only if no industry detected)
+    # =========================================================================
+
+    # SERVICES - Generic fallback
     if "service" in message_lower or "offer" in message_lower or "what do you do" in message_lower or "what can you" in message_lower:
         return (
             "We build automation systems that handle the stuff your team shouldn't be doing manually - "
             "market research, content creation, lead qualification, that kind of thing.\n\n"
-            "Most clients come to us when they're growing fast but can't hire fast enough. "
-            "What's going on in your business that made you curious?"
+            "What industry are you in? I can give you some specific examples of what we do."
         )
 
     # HOW IT WORKS - Deflect gracefully, protect IP
@@ -198,7 +389,7 @@ async def generate_contextual_response(
         return (
             "We have a video production system that can turn around professional commercials in minutes, "
             "not weeks. Great for companies that need a lot of content fast.\n\n"
-            "Are you looking to scale up your video marketing? What platforms are you targeting?"
+            "What kind of business are you promoting?"
         )
 
     # MARKETING - Results focused
@@ -231,16 +422,15 @@ async def generate_contextual_response(
         return (
             "I'm here to figure out if Barrios A2I can help your business. "
             "We specialize in automating the repetitive work that's slowing your team down.\n\n"
-            "What brought you here today? I'd love to understand what you're dealing with."
+            "What industry are you in? I can give you some specific examples."
         )
 
     # BOOK/CALL/MEETING - Facilitate
     if "call" in message_lower or "meeting" in message_lower or "book" in message_lower or "schedule" in message_lower or "talk" in message_lower:
         return (
-            "Love to chat more! The best next step is a quick strategy call where we can "
-            "dig into your specific situation.\n\n"
-            "Head to **barriosa2i.com** and book a time that works for you. "
-            "Or tell me more about your project and I can point you in the right direction."
+            "Happy to chat! The best way is to book a strategy call - we'll dig into your specific situation "
+            "and figure out if there's a fit.\n\n"
+            "You can book directly at **barriosa2i.com/book** - takes about 30 minutes."
         )
 
     # WHO/ABOUT - Company story
@@ -249,21 +439,13 @@ async def generate_contextual_response(
             "Barrios A2I is a premium automation agency - we build custom systems that "
             "handle the work your team shouldn't be doing manually.\n\n"
             "Our clients are usually growing companies that need to scale without "
-            "hiring a ton of people. Does that sound like your situation?"
+            "hiring a ton of people. What industry are you in?"
         )
 
-    # DEFAULT - Curious and helpful
-    if context and sources:
-        return (
-            "Interesting question! I'd love to give you a proper answer - "
-            "can you tell me a bit more about what you're trying to accomplish? "
-            "That'll help me point you in the right direction."
-        )
-
+    # DEFAULT - Ask for industry
     return (
-        "Hey, I'm here to help you figure out if Barrios A2I is the right fit for your business. "
-        "We build automation systems that save companies serious time and money.\n\n"
-        "What's the biggest bottleneck in your business right now?"
+        "Interesting - tell me more about your business. "
+        "What industry are you in and what's eating up too much of your team's time?"
     )
 
 
