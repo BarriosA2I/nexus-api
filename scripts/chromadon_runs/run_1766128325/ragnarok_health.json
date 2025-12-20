@@ -1,0 +1,28 @@
+{
+  "ragnarok": {
+    "status": "healthy",
+    "base_url": "http://localhost:8001",
+    "circuit_state": "CLOSED",
+    "response": {
+      "status": "healthy",
+      "version": "7.0.0-apex",
+      "environment": "production",
+      "uptime_seconds": 0,
+      "components": {
+        "orchestrator": "healthy",
+        "database": "healthy",
+        "redis": "healthy",
+        "rabbitmq": "healthy",
+        "vector_store": "healthy"
+      }
+    }
+  },
+  "circuit_breaker": {
+    "name": "ragnarok_service",
+    "state": "CLOSED",
+    "failure_count": 0,
+    "last_failure": null,
+    "active_polls": 0,
+    "cached_results": 1
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "job_id": "job_67b0dc79b1e9",
+  "status": "completed",
+  "created_at": "2025-12-19T07:12:11.027615",
+  "updated_at": "2025-12-19T07:12:13.558253",
+  "progress": 100.0,
+  "brief": "Create a 30-second commercial for Barrios A2I, an AI automation company. Target audience: B2B SaaS founders and marketing directors. Highlight how AI automation gives startups enterprise-grade infrastructure. Tone: bold, innovative, cyberpunk aesthetic with cosmic cyan and neon amber colors.",
+  "result": {
+    "video_url": "https://storage.barriosa2i.com/mock/commercial_1766128333.mp4",
+    "thumbnail_url": "https://storage.barriosa2i.com/mock/thumb_1766128333.jpg",
+    "script": "[SCENE 1 - OPENING]\nVisual: Dynamic tech montage\nVO: \"In a world driven by innovation...\"\n\n[SCENE 2 - PROBLEM]\nVisual: Pain point illustration\nVO: \"Businesses struggle with technology challenges...\"\n\n[SCENE 3 - SOLUTION]\nVisual: Product showcase\nVO: \"Create a 30-second commercial for Barrios A2I, an ...\"\n\n[SCENE 4 - CTA]\nVisual: Logo + call to action\nVO: \"Transform your future today.\"\n\nDuration: 30 seconds\nPlatform: youtube_1080p",
+    "duration_seconds": 30,
+    "cost_usd": 2.6,
+    "generation_time_seconds": 2.530297040939331,
+    "metadata": {
+      "mode": "mock",
+      "industry": "technology",
+      "platform": "youtube_1080p",
+      "model_version": "RAGNAROK_v7.0_APEX_MOCK"
+    }
+  },
+  "error": null
+}

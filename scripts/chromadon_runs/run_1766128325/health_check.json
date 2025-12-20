@@ -1,0 +1,68 @@
+{
+  "status": "ONLINE",
+  "uptime_seconds": 6971.85,
+  "version": "1.0.0",
+  "timestamp": "2025-12-19T07:12:10.631231",
+  "rag": {
+    "loaded": true,
+    "chunks": 21,
+    "knowledge_files": [
+      "nexus-sync-engine-v2.1-enhanced-spec.txt",
+      "nexus-v2.1-synthesis-report.txt"
+    ],
+    "load_time_ms": 29
+  },
+  "job_queue": {
+    "status": "running",
+    "latency_ms": null,
+    "details": {
+      "status": "running",
+      "total_jobs": 51,
+      "pending": 0,
+      "running": 0,
+      "workers": 5,
+      "handlers": [
+        "ragnarok_generate"
+      ]
+    }
+  },
+  "ragnarok": {
+    "status": "available",
+    "latency_ms": null,
+    "details": {
+      "status": "available",
+      "mode": "api",
+      "ragnarok_path": null,
+      "api_url": "http://localhost:8001",
+      "pipeline_loaded": false,
+      "orchestrator_type": null,
+      "orchestrator_loaded": false
+    }
+  },
+  "circuit_breakers": [
+    {
+      "name": "rag_service",
+      "state": "CLOSED",
+      "failure_count": 0,
+      "last_failure": null
+    },
+    {
+      "name": "ragnarok_bridge",
+      "state": "CLOSED",
+      "failure_count": 0,
+      "last_failure": null
+    },
+    {
+      "name": "llm_gateway",
+      "state": "CLOSED",
+      "failure_count": 0,
+      "last_failure": null
+    },
+    {
+      "name": "ragnarok_service",
+      "state": "CLOSED",
+      "failure_count": 0,
+      "last_failure": null
+    }
+  ]
+}

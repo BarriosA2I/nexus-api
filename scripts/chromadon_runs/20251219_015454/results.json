@@ -1,0 +1,66 @@
+{
+  "mode": "swagger_dom_failed",
+  "error": "Locator.wait_for: SyntaxError: Invalid flags supplied to RegExp constructor 'health'\n    at new RegExp (<anonymous>)\n    at createTextMatcher (<anonymous>:7912:16)\n    at Object.queryAll (<anonymous>:6816:33)\n    at InjectedScript._queryEngineAll (<anonymous>:6789:49)\n    at InjectedScript.querySelectorAll (<anonymous>:6776:30)\n    at eval (eval at evaluate (:290:30), <anonymous>:4:35)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)\nCall log:\n  - waiting for locator(\"text=/api/nexus/ragnarok/service/health\").first to be visible\n",
+  "fallback": {
+    "mode": "http_fallback",
+    "service_health_status": 200,
+    "service_health_json": {
+      "ragnarok": {
+        "status": "healthy",
+        "base_url": "http://localhost:8001",
+        "circuit_state": "CLOSED",
+        "response": {
+          "status": "healthy",
+          "version": "7.0.0-apex",
+          "environment": "production",
+          "uptime_seconds": 0,
+          "components": {
+            "orchestrator": "healthy",
+            "database": "healthy",
+            "redis": "healthy",
+            "rabbitmq": "healthy",
+            "vector_store": "healthy"
+          }
+        }
+      },
+      "circuit_breaker": {
+        "name": "ragnarok_service",
+        "state": "CLOSED",
+        "failure_count": 0,
+        "last_failure": null,
+        "active_polls": 0,
+        "cached_results": 1
+      }
+    },
+    "circuit_status": 200,
+    "circuit_json": {
+      "name": "ragnarok_service",
+      "state": "CLOSED",
+      "failure_count": 0,
+      "last_failure": null,
+      "active_polls": 0,
+      "cached_results": 1
+    },
+    "generate_status": 422,
+    "generate_json": {
+      "detail": [
+        {
+          "type": "missing",
+          "loc": [
+            "body",
+            "brief"
+          ],
+          "msg": "Field required",
+          "input": {
+            "company_name": "Barrios A2I",
+            "product_description": "AI automation that gives startups enterprise infrastructure",
+            "target_audience": "B2B SaaS founders, marketing directors",
+            "tone": "bold, innovative",
+            "duration_seconds": 30
+          }
+        }
+      ]
+    },
+    "error": "No job_id returned from /generate"
+  }
+}

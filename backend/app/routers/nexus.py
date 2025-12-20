@@ -193,132 +193,131 @@ async def generate_contextual_response(
     sources: list,
 ) -> str:
     """
-    Generate contextual response based on RAG context.
+    Generate sales-focused conversational response.
 
-    This is a template-based response generator. In production,
-    replace with actual LLM call (OpenAI, Anthropic, etc.)
+    Personality: Friendly business consultant
+    Goal: Understand their needs, guide toward strategy call
+    Rules: No technical jargon, focus on business outcomes
     """
     message_lower = message.lower()
 
-    # Check for specific topics
-    if "cost" in message_lower and "reduction" in message_lower:
+    # GREETINGS - Ask about their business first
+    if "hello" in message_lower or "hey" in message_lower or message_lower.strip() in ["hi", "yo", "sup", "hola"]:
         return (
-            "The **Nexus v2.1 architecture** achieves significant cost reduction through several mechanisms:\n\n"
-            "1. **Intelligent Model Routing**: Automatically routes queries to the most cost-effective model "
-            "(Haiku for simple queries, Sonnet for complex ones, Opus only when necessary)\n"
-            "2. **Semantic Caching**: Identifies semantically similar queries to avoid redundant API calls, "
-            "reducing costs by up to 70%\n"
-            "3. **Circuit Breakers**: Prevent cascade failures that would otherwise waste API credits\n"
-            "4. **Local TF-IDF RAG**: Zero-cost retrieval for knowledge base queries\n\n"
-            "Combined, these optimizations can reduce operational costs by **60-70%** compared to naive implementations."
+            "Hey! Welcome to Barrios A2I. I'm here to help you figure out if we're the right fit. "
+            "What kind of work is eating up most of your team's time right now?"
         )
 
-    if "circuit breaker" in message_lower:
+    # SERVICES - Focus on outcomes, not tech
+    if "service" in message_lower or "offer" in message_lower or "what do you do" in message_lower or "what can you" in message_lower:
         return (
-            "The **Circuit Breaker** pattern in Nexus follows the Netflix Hystrix model:\n\n"
-            "**States:**\n"
-            "- **CLOSED**: Normal operation, requests pass through\n"
-            "- **OPEN**: After 5 consecutive failures, rejects all requests for 30 seconds\n"
-            "- **HALF_OPEN**: After recovery timeout, allows limited requests to test recovery\n\n"
-            "**Benefits:**\n"
-            "- Prevents cascade failures across services\n"
-            "- Provides graceful degradation\n"
-            "- Allows automatic recovery\n"
-            "- Protects downstream services from overload"
+            "We build automation systems that handle the stuff your team shouldn't be doing manually - "
+            "market research, content creation, lead qualification, that kind of thing.\n\n"
+            "Most clients come to us when they're growing fast but can't hire fast enough. "
+            "What's going on in your business that made you curious?"
         )
 
-    if "ragnarok" in message_lower or "video" in message_lower:
+    # HOW IT WORKS - Deflect gracefully, protect IP
+    if "how does" in message_lower or "how do you" in message_lower or "how it work" in message_lower or "explain" in message_lower:
         return (
-            "**RAGNAROK v7.0 APEX** is our 9-agent video generation system:\n\n"
-            "**Capabilities:**\n"
-            "- Generate commercial videos in ~243 seconds\n"
-            "- Cost per commercial: ~$2.60\n"
-            "- 97.5% success rate\n"
-            "- Supports multiple platforms (YouTube, TikTok, LinkedIn)\n\n"
-            "**To generate a commercial**, use a command like:\n"
-            "*\"Create a 30-second commercial about AI automation for the technology industry\"*"
+            "Honestly, the *how* is less important than the *what* - we've spent years figuring out "
+            "the technical stuff so you don't have to.\n\n"
+            "What matters is: does it solve your problem and is it worth the investment? "
+            "Tell me more about what you're trying to accomplish."
         )
 
-    if "architecture" in message_lower or "system" in message_lower:
+    # TECHNICAL TERMS - Deflect any AI/tech jargon questions
+    tech_terms = ["rag", "llm", "gpt", "neural", "vector", "embedding", "model", "algorithm",
+                  "architecture", "api", "database", "machine learning", "artificial intelligence",
+                  "circuit breaker", "cache", "pipeline"]
+    if any(term in message_lower for term in tech_terms):
         return (
-            "The **Nexus v2.1 Architecture** consists of several integrated components:\n\n"
-            "**Core Services:**\n"
-            "- **Local RAG**: TF-IDF based retrieval (zero API cost)\n"
-            "- **Circuit Breakers**: Netflix Hystrix pattern for resilience\n"
-            "- **Job Store**: Async job queue for long-running tasks\n"
-            "- **RAGNAROK Bridge**: Video generation pipeline integration\n\n"
-            "**API Layer:**\n"
-            "- FastAPI with SSE streaming\n"
-            "- RESTful endpoints for health, chat, and job management\n"
-            "- CORS support for frontend integration"
+            "I could bore you with the technical details, but here's what actually matters: "
+            "our systems work, they're reliable, and they get results.\n\n"
+            "We've built these tools for clients across dozens of industries. "
+            "What industry are you in? I can share some relevant examples."
         )
 
-    if "service" in message_lower or "offer" in message_lower or "what do you do" in message_lower:
+    # PRICING - Guide toward conversation
+    if "pricing" in message_lower or "cost" in message_lower or "price" in message_lower or "how much" in message_lower or "expensive" in message_lower:
         return (
-            "**Barrios A2I** offers cutting-edge AI automation services:\n\n"
-            "**1. RAG Research Agents** - Intelligent market analysis and competitor research\n"
-            "**2. Marketing Overlord** - Automated campaigns, content generation, social media\n"
-            "**3. AI-Powered Websites** - Legendary sites with intelligent assistants like me!\n"
-            "**4. Custom App Development**:\n"
-            "   - Option A: Free build for 30% equity\n"
-            "   - Option B: Flat fee for 100% ownership\n\n"
-            "**Pricing**: High-ticket $50K-$300K for custom AI systems\n\n"
-            "Which service interests you most?"
+            "Depends on what we're building. Smaller projects start around $50K, "
+            "enterprise solutions can go up to $300K. We also do equity partnerships for the right fit.\n\n"
+            "But honestly, pricing only matters if we can actually solve your problem. "
+            "What's the challenge you're facing?"
         )
 
-    if "pricing" in message_lower or "cost" in message_lower or "price" in message_lower or "how much" in message_lower:
+    # VIDEO/COMMERCIAL - Focus on results
+    if "video" in message_lower or "commercial" in message_lower or "ad" in message_lower:
         return (
-            "**Barrios A2I Pricing Tiers:**\n\n"
-            "**Custom AI Systems**: $50K - $300K\n"
-            "- Full enterprise solutions with RAG, orchestration, and automation\n\n"
-            "**App Development Options**:\n"
-            "- **Option A**: Free build in exchange for 30% equity\n"
-            "- **Option B**: Flat fee for 100% ownership\n\n"
-            "**RAGNAROK Video Generation**: ~$2.60 per commercial\n"
-            "- 30-second commercials in ~4 minutes\n\n"
-            "Would you like to discuss a specific project?"
+            "We have a video production system that can turn around professional commercials in minutes, "
+            "not weeks. Great for companies that need a lot of content fast.\n\n"
+            "Are you looking to scale up your video marketing? What platforms are you targeting?"
         )
 
-    if "hello" in message_lower or "hey" in message_lower or message_lower.strip() in ["hi", "yo", "sup"]:
+    # MARKETING - Results focused
+    if "marketing" in message_lower or "content" in message_lower or "social" in message_lower:
         return (
-            "Hello! I'm **Nexus**, your AI interface to Barrios A2I.\n\n"
-            "I can help you explore:\n"
-            "- **Our Services** - RAG agents, Marketing Overlord, AI websites\n"
-            "- **Technology** - How our v2.1 architecture achieves 70% cost reduction\n"
-            "- **RAGNAROK** - Our commercial video generation system\n\n"
-            "What would you like to know?"
+            "We build systems that run your marketing while you sleep - content, social posts, "
+            "ad campaigns, all coordinated and optimized automatically.\n\n"
+            "Most clients see their team's time freed up by 60-70%. "
+            "What's your current marketing setup like?"
         )
 
-    if "help" in message_lower or "can you" in message_lower or "what can" in message_lower:
+    # RESEARCH/INTELLIGENCE - Business outcomes
+    if "research" in message_lower or "intelligence" in message_lower or "competitor" in message_lower or "market" in message_lower:
         return (
-            "I can assist you with:\n\n"
-            "**🔍 Information**\n"
-            "- Services and pricing\n"
-            "- Technical architecture details\n"
-            "- RAGNAROK video generation\n\n"
-            "**🎬 Actions**\n"
-            "- Generate commercial videos (say *\"create a commercial about...\"*)\n"
-            "- Explain cost optimization strategies\n"
-            "- Discuss deployment options\n\n"
-            "Just ask your question!"
+            "Think of it as having a team of analysts working 24/7 - finding opportunities, "
+            "tracking competitors, surfacing insights your team would miss.\n\n"
+            "What kind of research is your team doing manually right now?"
         )
 
-    # Default response based on context availability
+    # WEBSITE - Focus on what it does
+    if "website" in message_lower or "site" in message_lower:
+        return (
+            "Not just pretty pages - we build sites that actually have conversations with visitors, "
+            "qualify leads, and book meetings for you. Like what we're doing right now.\n\n"
+            "What's your current website doing for lead generation?"
+        )
+
+    # HELP/CAPABILITIES - Guide the conversation
+    if "help" in message_lower or "can you" in message_lower:
+        return (
+            "I'm here to figure out if Barrios A2I can help your business. "
+            "We specialize in automating the repetitive work that's slowing your team down.\n\n"
+            "What brought you here today? I'd love to understand what you're dealing with."
+        )
+
+    # BOOK/CALL/MEETING - Facilitate
+    if "call" in message_lower or "meeting" in message_lower or "book" in message_lower or "schedule" in message_lower or "talk" in message_lower:
+        return (
+            "Love to chat more! The best next step is a quick strategy call where we can "
+            "dig into your specific situation.\n\n"
+            "Head to **barriosa2i.com** and book a time that works for you. "
+            "Or tell me more about your project and I can point you in the right direction."
+        )
+
+    # WHO/ABOUT - Company story
+    if "who" in message_lower or "about" in message_lower or "company" in message_lower or "barrios" in message_lower:
+        return (
+            "Barrios A2I is a premium automation agency - we build custom systems that "
+            "handle the work your team shouldn't be doing manually.\n\n"
+            "Our clients are usually growing companies that need to scale without "
+            "hiring a ton of people. Does that sound like your situation?"
+        )
+
+    # DEFAULT - Curious and helpful
     if context and sources:
         return (
-            f"Based on the knowledge base, I found {len(sources)} relevant sources for your query.\n\n"
-            f"The most relevant information indicates that {context[:500]}...\n\n"
-            "Would you like me to elaborate on any specific aspect?"
+            "Interesting question! I'd love to give you a proper answer - "
+            "can you tell me a bit more about what you're trying to accomplish? "
+            "That'll help me point you in the right direction."
         )
 
     return (
-        "I'm **Nexus**, the intelligence interface for Barrios A2I. "
-        "I can help you with:\n\n"
-        "- **Architecture questions**: How the v2.1 system works\n"
-        "- **Cost optimization**: How we achieve 70% cost reduction\n"
-        "- **RAGNAROK**: Commercial video generation\n"
-        "- **Deployment**: Service protocols and pricing\n\n"
-        "What would you like to know more about?"
+        "Hey, I'm here to help you figure out if Barrios A2I is the right fit for your business. "
+        "We build automation systems that save companies serious time and money.\n\n"
+        "What's the biggest bottleneck in your business right now?"
     )
 
 

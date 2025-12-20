@@ -1,0 +1,100 @@
+Queue a new commercial generation job.
+
+The job will be processed asynchronously by the RAGNAROK pipeline. Poll the job status endpoint to check progress.
+
+Parameters
+Cancel
+Reset
+
+No parameters
+
+Request body
+application/json
+Edit Value
+Schema
+Execute
+Clear
+Responses
+Curl
+curl -X 'POST' \
+  'http://localhost:8000/api/nexus/ragnarok/generate' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "brief": "Create a 30-second commercial for Barrios A2I, an AI automation company. Target audience: B2B SaaS founders and marketing directors. Highlight how AI automation gives startups enterprise-grade infrastructure. Tone: bold, innovative, cyberpunk aesthetic with cosmic cyan and neon amber colors.",
+  "industry": "technology",
+  "duration_seconds": 30,
+  "platform": "youtube_1080p",
+  "style": "cyberpunk",
+  "voice_style": "professional"
+}'
+Request URL
+http://localhost:8000/api/nexus/ragnarok/generate
+Server response
+Code	Details
+200	
+Response body
+Download
+{
+  "job_id": "job_8db62df5d9f5",
+  "status": "pending",
+  "created_at": "2025-12-19T07:02:10.320956",
+  "updated_at": "2025-12-19T07:02:10.320956",
+  "progress": 0,
+  "brief": "Create a 30-second commercial for Barrios A2I, an AI automation company. Target audience: B2B SaaS founders and marketing directors. Highlight how AI automation gives startups enterprise-grade infrastructure. Tone: bold, innovative, cyberpunk aesthetic with cosmic cyan and neon amber colors.",
+  "result": null,
+  "error": null
+}
+Response headers
+ access-control-allow-credentials: true 
+ access-control-allow-origin: * 
+ content-length: 477 
+ content-type: application/json 
+ date: Fri,19 Dec 2025 07:02:10 GMT 
+ server: uvicorn 
+ x-trace-id: nxs_1766127730_9650a22c 
+Responses
+Code	Description	Links
+200	
+
+Successful Response
+
+Media type
+application/json
+Controls Accept header.
+Example Value
+Schema
+{
+  "job_id": "string",
+  "status": "pending",
+  "created_at": "2025-12-19T07:02:10.603Z",
+  "updated_at": "2025-12-19T07:02:10.603Z",
+  "progress": 0,
+  "brief": "string",
+  "result": {
+    "additionalProp1": {}
+  },
+  "error": "string"
+}
+	No links
+422	
+
+Validation Error
+
+Media type
+application/json
+Example Value
+Schema
+{
+  "detail": [
+    {
+      "loc": [
+        "string",
+        0
+      ],
+      "msg": "string",
+      "type": "string"
+    }
+  ]
+}
+	No links

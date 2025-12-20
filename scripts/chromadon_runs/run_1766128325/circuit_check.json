@@ -1,0 +1,8 @@
+{
+  "name": "ragnarok_service",
+  "state": "CLOSED",
+  "failure_count": 0,
+  "last_failure": null,
+  "active_polls": 0,
+  "cached_results": 1
+}
