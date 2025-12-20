@@ -253,6 +253,56 @@ async def generate_contextual_response(
             "- CORS support for frontend integration"
         )
 
+    if "service" in message_lower or "offer" in message_lower or "what do you do" in message_lower:
+        return (
+            "**Barrios A2I** offers cutting-edge AI automation services:\n\n"
+            "**1. RAG Research Agents** - Intelligent market analysis and competitor research\n"
+            "**2. Marketing Overlord** - Automated campaigns, content generation, social media\n"
+            "**3. AI-Powered Websites** - Legendary sites with intelligent assistants like me!\n"
+            "**4. Custom App Development**:\n"
+            "   - Option A: Free build for 30% equity\n"
+            "   - Option B: Flat fee for 100% ownership\n\n"
+            "**Pricing**: High-ticket $50K-$300K for custom AI systems\n\n"
+            "Which service interests you most?"
+        )
+
+    if "pricing" in message_lower or "cost" in message_lower or "price" in message_lower or "how much" in message_lower:
+        return (
+            "**Barrios A2I Pricing Tiers:**\n\n"
+            "**Custom AI Systems**: $50K - $300K\n"
+            "- Full enterprise solutions with RAG, orchestration, and automation\n\n"
+            "**App Development Options**:\n"
+            "- **Option A**: Free build in exchange for 30% equity\n"
+            "- **Option B**: Flat fee for 100% ownership\n\n"
+            "**RAGNAROK Video Generation**: ~$2.60 per commercial\n"
+            "- 30-second commercials in ~4 minutes\n\n"
+            "Would you like to discuss a specific project?"
+        )
+
+    if "hello" in message_lower or "hey" in message_lower or message_lower.strip() in ["hi", "yo", "sup"]:
+        return (
+            "Hello! I'm **Nexus**, your AI interface to Barrios A2I.\n\n"
+            "I can help you explore:\n"
+            "- **Our Services** - RAG agents, Marketing Overlord, AI websites\n"
+            "- **Technology** - How our v2.1 architecture achieves 70% cost reduction\n"
+            "- **RAGNAROK** - Our commercial video generation system\n\n"
+            "What would you like to know?"
+        )
+
+    if "help" in message_lower or "can you" in message_lower or "what can" in message_lower:
+        return (
+            "I can assist you with:\n\n"
+            "**🔍 Information**\n"
+            "- Services and pricing\n"
+            "- Technical architecture details\n"
+            "- RAGNAROK video generation\n\n"
+            "**🎬 Actions**\n"
+            "- Generate commercial videos (say *\"create a commercial about...\"*)\n"
+            "- Explain cost optimization strategies\n"
+            "- Discuss deployment options\n\n"
+            "Just ask your question!"
+        )
+
     # Default response based on context availability
     if context and sources:
         return (
