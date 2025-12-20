@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .config import settings
 from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
 from .services.rag_local import init_rag_service
+from .services.nexus_brain import get_nexus_brain
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
 from .services.circuit_breaker import circuit_registry
@@ -101,6 +102,14 @@ async def lifespan(app: FastAPI):
     ragnarok = get_ragnarok_bridge()
     await ragnarok.initialize()
     logger.info(f"Ragnarok mode: {ragnarok.mode.value}")
+
+    # Initialize Nexus Brain (LLM)
+    logger.info("Initializing Nexus Brain...")
+    brain = get_nexus_brain()
+    logger.info(f"Nexus Brain provider: {brain.get_provider()}")
+    logger.info(f"Nexus Brain available: {brain.is_available()}")
+    if not brain.is_available():
+        logger.warning("Nexus Brain using FALLBACK mode - set ANTHROPIC_API_KEY for LLM responses")
 
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.HOST}:{settings.PORT}")
