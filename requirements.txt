@@ -1,5 +1,4 @@
-# Nexus Assistant Unified - Root Dependencies
-# Points to backend requirements
+# Nexus Assistant Unified - Dependencies
 
 # Web framework
 fastapi>=0.104.0
@@ -14,6 +13,7 @@ numpy>=1.24.0
 
 # HTTP client
 httpx>=0.25.0
+aiohttp>=3.9.0
 
 # Async utilities
 anyio>=4.0.0
@@ -21,3 +21,6 @@ anyio>=4.0.0
 # Environment
 python-dotenv>=1.0.0
 python-multipart>=0.0.6
+
+# LLM Providers (Nexus Brain) - REQUIRED FOR CLAUDE
+anthropic>=0.39.0
