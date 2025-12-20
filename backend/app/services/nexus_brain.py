@@ -225,8 +225,16 @@ class NexusBrain:
 
     def _init_client(self):
         """Initialize LLM client based on available API keys."""
+        # Debug logging
+        logger.info(f"ANTHROPIC_AVAILABLE: {ANTHROPIC_AVAILABLE}")
+        logger.info(f"OPENAI_AVAILABLE: {OPENAI_AVAILABLE}")
+
         # Try Anthropic first (use settings which loads .env)
         anthropic_key = settings.ANTHROPIC_API_KEY
+        logger.info(f"ANTHROPIC_API_KEY present: {bool(anthropic_key)}")
+        if anthropic_key:
+            logger.info(f"ANTHROPIC_API_KEY starts with: {anthropic_key[:20]}...")
+
         if anthropic_key and ANTHROPIC_AVAILABLE:
             self.client = anthropic.AsyncAnthropic(api_key=anthropic_key)
             self.provider = "anthropic"
@@ -235,6 +243,7 @@ class NexusBrain:
 
         # Try OpenAI
         openai_key = settings.OPENAI_API_KEY
+        logger.info(f"OPENAI_API_KEY present: {bool(openai_key)}")
         if openai_key and OPENAI_AVAILABLE:
             self.client = AsyncOpenAI(api_key=openai_key)
             self.provider = "openai"
