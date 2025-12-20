@@ -9,6 +9,8 @@ import os
 import logging
 from typing import AsyncGenerator, Optional, List, Dict
 
+from ..config import settings  # Load .env via pydantic-settings
+
 logger = logging.getLogger("nexus_brain")
 
 # =============================================================================
@@ -223,8 +225,8 @@ class NexusBrain:
 
     def _init_client(self):
         """Initialize LLM client based on available API keys."""
-        # Try Anthropic first
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        # Try Anthropic first (use settings which loads .env)
+        anthropic_key = settings.ANTHROPIC_API_KEY
         if anthropic_key and ANTHROPIC_AVAILABLE:
             self.client = anthropic.AsyncAnthropic(api_key=anthropic_key)
             self.provider = "anthropic"
@@ -232,7 +234,7 @@ class NexusBrain:
             return
 
         # Try OpenAI
-        openai_key = os.getenv("OPENAI_API_KEY")
+        openai_key = settings.OPENAI_API_KEY
         if openai_key and OPENAI_AVAILABLE:
             self.client = AsyncOpenAI(api_key=openai_key)
             self.provider = "openai"
