@@ -28,6 +28,7 @@ from ..services.rag_local import get_rag_service
 from ..services.job_store import get_job_store
 from ..services.ragnarok_bridge import get_ragnarok_bridge
 from ..services.circuit_breaker import circuit_registry, CircuitBreakerError
+from ..services.nexus_brain import generate_nexus_response, get_nexus_brain
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
 logger = logging.getLogger(__name__)
@@ -76,40 +77,24 @@ async def generate_rag_response(
     trace_id: str,
 ) -> AsyncGenerator[str, None]:
     """
-    Sales-Safe RAG streaming generator.
+    LLM-powered RAG streaming generator.
 
-    Uses human-friendly event types: meta, delta, final, error
-    Never exposes: confidence, trace_id, sources, internal step names
+    Uses Nexus Brain for intelligent, context-aware responses.
+    Falls back to pattern matching if no LLM API key is available.
     """
-    rag_service = get_rag_service()
-
     try:
-        # Opening status (human-friendly)
-        yield sse_thinking("One sec—getting context.")
+        # Opening status
+        yield sse_thinking("One sec...")
         await asyncio.sleep(0.1)
 
-        # Internal work - logged but not streamed
-        rag_circuit = circuit_registry.get_or_create("rag_service")
-        if rag_circuit.is_open:
-            raise CircuitBreakerError("rag_service", rag_circuit.state)
+        # Log the provider being used
+        brain = get_nexus_brain()
+        logger.info(f"[{trace_id}] Using Nexus Brain ({brain.get_provider()})")
 
-        logger.info(f"[{trace_id}] Circuit check passed")
-
-        # RAG search (internal)
-        start_search = time.time()
-        context, source_list = rag_service.get_context(message, max_tokens=2000)
-        search_time = int((time.time() - start_search) * 1000)
-        logger.info(f"[{trace_id}] Retrieved {len(source_list)} sources in {search_time}ms")
-
-        # Generate response
-        response = await generate_contextual_response(message, context, source_list)
-
-        # Stream response chunks using delta events
-        words = response.split()
-        for i, word in enumerate(words):
-            chunk = word + (" " if i < len(words) - 1 else "")
+        # Generate response using LLM brain
+        async for chunk in generate_nexus_response(message):
             yield sse_delta(chunk)
-            await asyncio.sleep(0.03 + (0.02 * (len(word) / 10)))
+            await asyncio.sleep(0.02)
 
         # Determine next action based on message content
         message_lower = message.lower()
@@ -119,13 +104,8 @@ async def generate_rag_response(
         elif any(term in message_lower for term in ["book", "call", "meeting", "schedule"]):
             next_action = "booking"
 
-        # Final event - NO confidence, NO sources, just support code
+        # Final event
         yield sse_final(trace_id, next_action)
-
-    except CircuitBreakerError:
-        logger.error(f"[{trace_id}] Circuit breaker open")
-        yield sse_error("I'm having trouble loading right now. Try again in a moment.")
-        yield sse_final(trace_id, "question")
 
     except Exception as e:
         logger.error(f"[{trace_id}] Chat error: {e}")
