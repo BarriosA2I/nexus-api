@@ -9,7 +9,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://barrios-landing.vercel.app,https://barriosa2i.com,http://localhost:3000"
       - key: LOG_LEVEL
         value: "INFO"
       - key: RAGNAROK_MODE
