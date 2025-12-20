@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
-from .routers import nexus_router, ragnarok_router, intake_router
+from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
 from .services.rag_local import init_rag_service
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
@@ -144,7 +144,11 @@ app.add_middleware(TraceIdMiddleware)
 # Include routers
 app.include_router(nexus_router)
 app.include_router(ragnarok_router)
-app.include_router(intake_router)
+if INTAKE_AVAILABLE and intake_router:
+    app.include_router(intake_router)
+    logger.info("Intake router enabled")
+else:
+    logger.warning("Intake router disabled (missing dependencies)")
 
 
 @app.get("/")
