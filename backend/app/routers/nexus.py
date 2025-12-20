@@ -28,6 +28,7 @@ from ..services.rag_local import get_rag_service
 from ..services.job_store import get_job_store
 from ..services.ragnarok_bridge import get_ragnarok_bridge
 from ..services.circuit_breaker import circuit_registry, CircuitBreakerError
+from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
 logger = logging.getLogger(__name__)
 
@@ -75,116 +76,61 @@ async def generate_rag_response(
     trace_id: str,
 ) -> AsyncGenerator[str, None]:
     """
-    Generate RAG-based response with SSE streaming.
+    Sales-Safe RAG streaming generator.
 
-    Steps:
-    1. Circuit check
-    2. Semantic search
-    3. Context assembly
-    4. Response generation (simulated LLM)
-    5. Completion with sources
+    Uses human-friendly event types: meta, delta, final, error
+    Never exposes: confidence, trace_id, sources, internal step names
     """
     rag_service = get_rag_service()
-    sources = []
-    confidence = 0.0
 
     try:
-        # Step 1: Circuit check
-        yield sse_event({
-            "type": "status",
-            "step": "circuit_check",
-            "message": "Checking neural pathways...",
-            "trace_id": trace_id,
-        })
+        # Opening status (human-friendly)
+        yield sse_thinking("One sec—getting context.")
         await asyncio.sleep(0.1)
 
-        # Check circuit breaker
+        # Internal work - logged but not streamed
         rag_circuit = circuit_registry.get_or_create("rag_service")
         if rag_circuit.is_open:
             raise CircuitBreakerError("rag_service", rag_circuit.state)
 
-        # Step 2: Semantic search
-        yield sse_event({
-            "type": "status",
-            "step": "semantic_search",
-            "message": "Searching knowledge base...",
-            "trace_id": trace_id,
-        })
+        logger.info(f"[{trace_id}] Circuit check passed")
 
+        # RAG search (internal)
         start_search = time.time()
         context, source_list = rag_service.get_context(message, max_tokens=2000)
         search_time = int((time.time() - start_search) * 1000)
+        logger.info(f"[{trace_id}] Retrieved {len(source_list)} sources in {search_time}ms")
 
-        # Convert sources to Source objects
-        sources = [
-            Source(
-                title=s["title"],
-                chunk_id=s["chunk_id"],
-                relevance=s["relevance"],
-                excerpt=s["excerpt"],
-                file=s.get("file"),
-            )
-            for s in source_list
-        ]
+        # Generate response
+        response = await generate_contextual_response(message, context, source_list)
 
-        # Calculate confidence based on source relevance
-        if sources:
-            confidence = min(0.95, sum(s.relevance for s in sources) / len(sources) + 0.2)
-        else:
-            confidence = 0.3
-
-        logger.info(f"[{trace_id}] RAG search: {len(sources)} sources in {search_time}ms")
-
-        # Step 3: Generate response
-        yield sse_event({
-            "type": "status",
-            "step": "generation",
-            "message": "Synthesizing response...",
-            "trace_id": trace_id,
-        })
-
-        # Generate response based on context
-        response = await generate_contextual_response(message, context, sources)
-
-        # Step 4: Stream response chunks
+        # Stream response chunks using delta events
         words = response.split()
         for i, word in enumerate(words):
             chunk = word + (" " if i < len(words) - 1 else "")
-            yield sse_event({
-                "type": "chunk",
-                "content": chunk,
-            })
-            await asyncio.sleep(0.03 + (0.02 * (len(word) / 10)))  # Variable delay
+            yield sse_delta(chunk)
+            await asyncio.sleep(0.03 + (0.02 * (len(word) / 10)))
 
-        # Step 5: Completion
-        yield sse_event({
-            "type": "complete",
-            "trace_id": trace_id,
-            "confidence": round(confidence, 2),
-            "sources": [s.model_dump() for s in sources],
-            "mode": "rag",
-            "tokens_used": len(response.split()) * 2,
-            "latency_ms": int((time.time() - start_search) * 1000),
-        })
+        # Determine next action based on message content
+        message_lower = message.lower()
+        next_action = "question"
+        if any(term in message_lower for term in ["commercial", "video", "ad", "intake"]):
+            next_action = "intake"
+        elif any(term in message_lower for term in ["book", "call", "meeting", "schedule"]):
+            next_action = "booking"
 
-    except CircuitBreakerError as e:
-        yield sse_event({
-            "type": "error",
-            "code": "CIRCUIT_OPEN",
-            "message": f"Service temporarily unavailable: {e.circuit_name}",
-            "recoverable": True,
-            "trace_id": trace_id,
-        })
+        # Final event - NO confidence, NO sources, just support code
+        yield sse_final(trace_id, next_action)
+
+    except CircuitBreakerError:
+        logger.error(f"[{trace_id}] Circuit breaker open")
+        yield sse_error("I'm having trouble loading right now. Try again in a moment.")
+        yield sse_final(trace_id, "question")
 
     except Exception as e:
-        logger.error(f"[{trace_id}] RAG error: {e}")
-        yield sse_event({
-            "type": "error",
-            "code": "RAG_ERROR",
-            "message": str(e),
-            "recoverable": True,
-            "trace_id": trace_id,
-        })
+        logger.error(f"[{trace_id}] Chat error: {e}")
+        yield sse_error("Something went wrong. Let me try again.")
+        yield sse_final(trace_id, "question")
 
 
 async def generate_contextual_response(
@@ -326,23 +272,19 @@ async def generate_ragnarok_response(
     trace_id: str,
 ) -> AsyncGenerator[str, None]:
     """
-    Handle RAGNAROK mode - queue video generation job.
+    Sales-Safe video generation streaming.
+    Uses human-friendly event types: meta, delta, final
     """
     job_store = get_job_store()
 
     try:
-        yield sse_event({
-            "type": "status",
-            "step": "ragnarok_init",
-            "message": "Initializing RAGNAROK pipeline...",
-            "trace_id": trace_id,
-        })
+        yield sse_thinking("Setting up your video request...")
         await asyncio.sleep(0.2)
 
         # Extract brief from message
         brief = message
 
-        # Submit job
+        # Submit job (internal)
         job = await job_store.submit(
             job_type="ragnarok_generate",
             payload={
@@ -354,54 +296,28 @@ async def generate_ragnarok_response(
             metadata={"trace_id": trace_id},
         )
 
-        yield sse_event({
-            "type": "status",
-            "step": "job_queued",
-            "message": f"Job queued: {job.id}",
-            "trace_id": trace_id,
-        })
+        logger.info(f"[{trace_id}] Video job queued: {job.id}")
 
-        # Stream response
+        # Sales-friendly response (no technical details)
         response = (
-            f"I've queued your commercial generation request.\n\n"
-            f"**Job ID**: `{job.id}`\n"
-            f"**Status**: {job.status.value}\n\n"
-            f"You can check the status at:\n"
-            f"`GET /api/nexus/ragnarok/jobs/{job.id}`\n\n"
-            f"The RAGNAROK pipeline will process your request:\n"
-            f"- Brief: *{brief[:100]}{'...' if len(brief) > 100 else ''}*\n"
-            f"- Duration: 30 seconds\n"
-            f"- Platform: YouTube 1080p\n"
-            f"- Estimated time: ~4 minutes"
+            f"Great! I've started your video request.\n\n"
+            f"Your video will be ready in about 4-5 minutes. "
+            f"We'll create a professional 30-second commercial based on your brief.\n\n"
+            f"While you wait, is there anything else you'd like to know about our services?"
         )
 
         words = response.split()
         for i, word in enumerate(words):
             chunk = word + (" " if i < len(words) - 1 else "")
-            yield sse_event({
-                "type": "chunk",
-                "content": chunk,
-            })
+            yield sse_delta(chunk)
             await asyncio.sleep(0.02)
 
-        yield sse_event({
-            "type": "complete",
-            "trace_id": trace_id,
-            "confidence": 1.0,
-            "sources": [],
-            "mode": "ragnarok",
-            "job_id": job.id,
-        })
+        yield sse_final(trace_id, "intake")
 
     except Exception as e:
-        logger.error(f"[{trace_id}] RAGNAROK error: {e}")
-        yield sse_event({
-            "type": "error",
-            "code": "RAGNAROK_ERROR",
-            "message": str(e),
-            "recoverable": True,
-            "trace_id": trace_id,
-        })
+        logger.error(f"[{trace_id}] Video request error: {e}")
+        yield sse_error("I had trouble setting up your video request. Let's try again.")
+        yield sse_final(trace_id, "question")
 
 
 @router.post("/chat")
