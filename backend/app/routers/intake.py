@@ -15,6 +15,7 @@ from ..services.voiceover_service import (
     generate_single_voiceover,
     get_service_health,
     is_initialized,
+    is_available,
 )
 from ..services.job_store import get_job_store
 
@@ -123,17 +124,25 @@ async def complete_intake(request: IntakeCompleteRequest) -> Dict[str, Any]:
 
     # Trigger voiceover generation if enabled
     if config.get("enable_voiceover", True):
-        try:
-            quality_tier = config.get("voiceover_quality", "premium")
-            config = await generate_voiceover_from_intake(config, quality_tier=quality_tier)
-            logger.info(f"[{trace_id}] Voiceover generation complete")
-        except Exception as e:
-            logger.error(f"[{trace_id}] Voiceover generation failed: {e}")
+        if not is_available():
+            logger.warning(f"[{trace_id}] Voiceover service unavailable - skipping")
             config["voiceover"] = {
                 "enabled": False,
-                "status": "failed",
-                "error": str(e),
+                "status": "unavailable",
+                "error": "VoiceoverMaster dependencies not installed",
             }
+        else:
+            try:
+                quality_tier = config.get("voiceover_quality", "premium")
+                config = await generate_voiceover_from_intake(config, quality_tier=quality_tier)
+                logger.info(f"[{trace_id}] Voiceover generation complete")
+            except Exception as e:
+                logger.error(f"[{trace_id}] Voiceover generation failed: {e}")
+                config["voiceover"] = {
+                    "enabled": False,
+                    "status": "failed",
+                    "error": str(e),
+                }
 
     # Create tracking job
     job_store = get_job_store()
@@ -167,6 +176,12 @@ async def generate_single(request: SingleVoiceoverRequest) -> Dict[str, Any]:
     Useful for testing or regenerating individual scenes.
     """
     trace_id = f"vo_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+    if not is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="VoiceoverMaster service unavailable - dependencies not installed"
+        )
 
     try:
         result = await generate_single_voiceover(

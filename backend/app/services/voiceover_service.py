@@ -7,25 +7,40 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 
-from .voiceover_master_agent import (
-    VoiceoverMasterAgent,
-    VoiceoverRequest,
-    VoiceoverResult,
-    VoiceoverConfig,
-    SceneType,
-    VoiceEmotion,
-)
-
 logger = logging.getLogger("voiceover_service")
+
+# Try to import VoiceoverMaster - may fail if dependencies missing
+try:
+    from .voiceover_master_agent import (
+        VoiceoverMasterAgent,
+        VoiceoverRequest,
+        VoiceoverResult,
+        VoiceoverConfig,
+        SceneType,
+        VoiceEmotion,
+    )
+    VOICEOVER_MASTER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"VoiceoverMaster unavailable: {e}")
+    VOICEOVER_MASTER_AVAILABLE = False
+    # Stubs for type hints
+    VoiceoverMasterAgent = None
+    VoiceoverRequest = None
+    VoiceoverResult = None
+    VoiceoverConfig = None
+    SceneType = None
+    VoiceEmotion = None
 
 # Singleton instance
 _agent: Optional[VoiceoverMasterAgent] = None
 _initialized: bool = False
 
 
-def get_voiceover_agent() -> VoiceoverMasterAgent:
+def get_voiceover_agent():
     """Get or create VoiceoverMaster agent singleton"""
     global _agent, _initialized
+    if not VOICEOVER_MASTER_AVAILABLE:
+        raise RuntimeError("VoiceoverMaster not available - missing dependencies")
     if _agent is None:
         config = VoiceoverConfig.from_env()
         _agent = VoiceoverMasterAgent(config)
@@ -36,7 +51,12 @@ def get_voiceover_agent() -> VoiceoverMasterAgent:
 
 def is_initialized() -> bool:
     """Check if agent is initialized"""
-    return _initialized
+    return _initialized and VOICEOVER_MASTER_AVAILABLE
+
+
+def is_available() -> bool:
+    """Check if VoiceoverMaster dependencies are available"""
+    return VOICEOVER_MASTER_AVAILABLE
 
 
 def transform_intake_to_scenes(client_config: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -226,6 +246,12 @@ async def generate_single_voiceover(
 
 def get_service_health() -> Dict[str, Any]:
     """Get voiceover service health info"""
+    if not VOICEOVER_MASTER_AVAILABLE:
+        return {
+            "status": "unavailable",
+            "initialized": False,
+            "reason": "VoiceoverMaster dependencies not installed",
+        }
     if not _initialized or _agent is None:
         return {
             "status": "unavailable",
