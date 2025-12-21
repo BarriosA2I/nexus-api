@@ -30,9 +30,46 @@ from ..services.job_store import get_job_store
 from ..services.ragnarok_bridge import get_ragnarok_bridge
 from ..services.circuit_breaker import circuit_registry, CircuitBreakerError
 from ..services.nexus_brain import generate_nexus_response, get_nexus_brain
+from ..services.event_publisher import get_event_publisher
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# INDUSTRY DETECTION (for event publishing)
+# =============================================================================
+
+def detect_industry_from_message(message: str, history: List[Dict] = None) -> str:
+    """
+    Detect industry from user message and conversation history.
+    Returns industry key or None if not detected.
+    """
+    # Combine message with recent history for context
+    text_to_analyze = message.lower()
+    if history:
+        for msg in history[-5:]:
+            text_to_analyze += " " + msg.get("content", "").lower()
+
+    industry_keywords = {
+        "dental_practices": ["dental", "dentist", "orthodontist", "teeth", "hygienist"],
+        "law_firms": ["law firm", "attorney", "lawyer", "legal", "paralegal"],
+        "real_estate": ["realtor", "real estate", "broker", "property", "escrow"],
+        "ecommerce": ["ecommerce", "shopify", "online store", "amazon", "woocommerce"],
+        "healthcare": ["doctor", "clinic", "medical", "healthcare", "physician"],
+        "marketing_agencies": ["marketing agency", "ad agency", "digital agency", "creative agency"],
+        "saas": ["saas", "software company", "tech startup", "platform"],
+        "accounting": ["accountant", "cpa", "bookkeeper", "tax", "financial advisor"],
+        "construction": ["contractor", "construction", "plumber", "electrician", "hvac"],
+        "restaurants": ["restaurant", "hotel", "hospitality", "bar", "cafe"],
+    }
+
+    for industry, keywords in industry_keywords.items():
+        for keyword in keywords:
+            if keyword in text_to_analyze:
+                return industry
+
+    return None
 
 router = APIRouter(prefix="/api/nexus", tags=["nexus"])
 
@@ -87,7 +124,12 @@ async def generate_rag_response(
 
     Uses Nexus Brain for intelligent, context-aware responses.
     Maintains conversation history per session for context continuity.
+    Publishes conversation events for feedback loop.
     """
+    start_time = time.time()
+    detected_industry = None
+    full_response = ""
+
     try:
         # Opening status
         yield sse_thinking("One sec...")
@@ -96,15 +138,20 @@ async def generate_rag_response(
         # Get conversation history for this session
         history = conversation_store[session_id]
 
+        # Detect industry from message and history (for event publishing)
+        detected_industry = detect_industry_from_message(message, history)
+
         # Add user message to history
         history.append({"role": "user", "content": message})
 
         # Log the provider and history size
         brain = get_nexus_brain()
-        logger.info(f"[{trace_id}] Using Nexus Brain ({brain.get_provider()}) | History: {len(history)} messages")
+        logger.info(
+            f"[{trace_id}] Using Nexus Brain ({brain.get_provider()}) | "
+            f"History: {len(history)} | Industry: {detected_industry or 'unknown'}"
+        )
 
         # Generate response using LLM brain with conversation history
-        full_response = ""
         async for chunk in generate_nexus_response(message, conversation_history=history[:-1]):
             full_response += chunk
             yield sse_delta(chunk)
@@ -127,6 +174,21 @@ async def generate_rag_response(
 
         # Final event
         yield sse_final(trace_id, next_action)
+
+        # Publish conversation event for feedback loop (non-blocking)
+        try:
+            response_latency_ms = (time.time() - start_time) * 1000
+            publisher = await get_event_publisher()
+            await publisher.publish_conversation_event(
+                conversation_id=session_id,
+                user_message=message,
+                nexus_response=full_response,
+                detected_industry=detected_industry,
+                confidence_score=1.0,  # TODO: Get from brain when RAG enabled
+                response_latency_ms=response_latency_ms,
+            )
+        except Exception as pub_error:
+            logger.debug(f"[{trace_id}] Event publish skipped: {pub_error}")
 
     except Exception as e:
         logger.error(f"[{trace_id}] Chat error: {e}")

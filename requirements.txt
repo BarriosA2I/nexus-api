@@ -30,7 +30,9 @@ anthropic>=0.39.0
 # qdrant-client>=1.7.0
 # sentence-transformers>=2.2.0
 redis>=5.0.0
-# aio-pika>=9.0.0
+
+# Event Publishing (Feedback Loop - graceful degradation if RabbitMQ not configured)
+aio-pika>=9.0.0
 
 # Scheduling (for Research Oracle)
 # APScheduler>=3.10.0

@@ -19,6 +19,7 @@ from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, g
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
 from .services.circuit_breaker import circuit_registry
+from .services.event_publisher import get_event_publisher, close_event_publisher
 
 # Configure logging
 logging.basicConfig(
@@ -132,6 +133,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Research Oracle RAG not configured (set QDRANT_URL and REDIS_URL to enable)")
 
+    # Initialize RabbitMQ event publisher (optional - graceful degradation)
+    rabbitmq_url = os.getenv("RABBITMQ_URL")
+    if rabbitmq_url:
+        logger.info("Initializing RabbitMQ event publisher...")
+        publisher = await get_event_publisher()
+        if publisher.is_enabled:
+            logger.info("✅ RabbitMQ event publishing enabled (feedback loop active)")
+        else:
+            logger.info("⚠️ RabbitMQ event publishing failed to connect")
+    else:
+        logger.info("Event publishing disabled (set RABBITMQ_URL to enable feedback loop)")
+
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.HOST}:{settings.PORT}")
     logger.info(f"API docs at http://{settings.HOST}:{settings.PORT}/docs")
@@ -141,6 +154,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Close event publisher
+    await close_event_publisher()
 
     # Stop job store
     await job_store.stop()
