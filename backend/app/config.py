@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     TRINITY_SYSTEM_PATH: Optional[str] = None
     TRINITY_TIMEOUT: int = 60
 
+    # Research Oracle (Perplexity + Qdrant)
+    PERPLEXITY_API_KEY: Optional[str] = None
+    QDRANT_URL: Optional[str] = None
+    QDRANT_API_KEY: Optional[str] = None
+
+    # Event Publishing (RabbitMQ/CloudAMQP)
+    RABBITMQ_URL: Optional[str] = None
+
     @property
     def knowledge_path(self) -> Path:
         """Get knowledge directory path"""

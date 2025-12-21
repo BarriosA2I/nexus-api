@@ -444,12 +444,12 @@ class PerplexityClient:
     """
     Perplexity AI API client for real-time web research.
 
-    Model: llama-3.1-sonar-large-128k-online
+    Model: sonar (latest Perplexity model)
     Features: Citations, recency filtering
     """
 
     BASE_URL = "https://api.perplexity.ai"
-    MODEL = "llama-3.1-sonar-large-128k-online"
+    MODEL = "sonar"
 
     def __init__(
         self,
@@ -538,14 +538,14 @@ class PerplexityClient:
 
 class HaikuProcessor:
     """
-    Claude Haiku 4.5 client for cost-efficient processing.
+    Claude Haiku 3.5 client for cost-efficient processing.
 
     Uses: Structured extraction, knowledge formatting
     Cost: ~$0.00025 per 1K tokens
     """
 
     BASE_URL = "https://api.anthropic.com"
-    MODEL = "claude-haiku-4-5-20241022"
+    MODEL = "claude-3-5-haiku-20241022"
 
     def __init__(
         self,
@@ -635,7 +635,8 @@ Research text:
             if not tool_use:
                 raise ValueError("No tool_use response from Haiku")
 
-            # Parse into Pydantic model
+            # Parse into Pydantic model (remove industry if present to avoid duplicate)
+            tool_use.pop("industry", None)
             knowledge = IndustryKnowledge(industry=industry, **tool_use)
 
             tokens = result.get("usage", {})
