@@ -27,7 +27,7 @@ anthropic>=0.39.0
 
 # RAG Components (Research Oracle - Qdrant Cloud configured)
 qdrant-client>=1.7.0
-sentence-transformers>=2.2.0
+# sentence-transformers removed - using OpenAI Embeddings API instead (memory efficient)
 redis>=5.0.0
 
 # Event Publishing (Feedback Loop - graceful degradation if RabbitMQ not configured)
