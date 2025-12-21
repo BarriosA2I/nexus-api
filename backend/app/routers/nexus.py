@@ -8,8 +8,9 @@ import uuid
 import asyncio
 import logging
 import re
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, List
 from datetime import datetime
+from collections import defaultdict
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,6 +38,10 @@ router = APIRouter(prefix="/api/nexus", tags=["nexus"])
 
 # Server start time for uptime calculation
 _start_time = time.time()
+
+# Conversation memory store - keeps history per session
+# Format: {session_id: [{"role": "user/assistant", "content": "..."}]}
+conversation_store: Dict[str, List[Dict[str, str]]] = defaultdict(list)
 
 
 def generate_trace_id() -> str:
@@ -75,26 +80,42 @@ def detect_mode(message: str) -> ChatMode:
 async def generate_rag_response(
     message: str,
     trace_id: str,
+    session_id: str,
 ) -> AsyncGenerator[str, None]:
     """
-    LLM-powered RAG streaming generator.
+    LLM-powered RAG streaming generator with conversation memory.
 
     Uses Nexus Brain for intelligent, context-aware responses.
-    Falls back to pattern matching if no LLM API key is available.
+    Maintains conversation history per session for context continuity.
     """
     try:
         # Opening status
         yield sse_thinking("One sec...")
         await asyncio.sleep(0.1)
 
-        # Log the provider being used
-        brain = get_nexus_brain()
-        logger.info(f"[{trace_id}] Using Nexus Brain ({brain.get_provider()})")
+        # Get conversation history for this session
+        history = conversation_store[session_id]
 
-        # Generate response using LLM brain
-        async for chunk in generate_nexus_response(message):
+        # Add user message to history
+        history.append({"role": "user", "content": message})
+
+        # Log the provider and history size
+        brain = get_nexus_brain()
+        logger.info(f"[{trace_id}] Using Nexus Brain ({brain.get_provider()}) | History: {len(history)} messages")
+
+        # Generate response using LLM brain with conversation history
+        full_response = ""
+        async for chunk in generate_nexus_response(message, conversation_history=history[:-1]):
+            full_response += chunk
             yield sse_delta(chunk)
             await asyncio.sleep(0.02)
+
+        # Save assistant response to history
+        history.append({"role": "assistant", "content": full_response})
+
+        # Keep history manageable (last 20 messages = 10 exchanges)
+        if len(history) > 20:
+            conversation_store[session_id] = history[-20:]
 
         # Determine next action based on message content
         message_lower = message.lower()
@@ -488,9 +509,14 @@ async def chat(request: ChatRequest):
     Chat endpoint with SSE streaming.
 
     Automatically detects mode (RAG or RAGNAROK) based on message content.
+    Maintains conversation memory per session_id for context continuity.
     """
     trace_id = generate_trace_id()
-    logger.info(f"[{trace_id}] Chat request: {request.message[:50]}...")
+
+    # Get or generate session_id for conversation memory
+    session_id = request.session_id or f"session_{uuid.uuid4().hex[:12]}"
+
+    logger.info(f"[{trace_id}] Chat request: {request.message[:50]}... | Session: {session_id}")
 
     # Detect mode
     mode = request.mode or detect_mode(request.message)
@@ -500,7 +526,7 @@ async def chat(request: ChatRequest):
     if mode == ChatMode.RAGNAROK:
         generator = generate_ragnarok_response(request.message, trace_id)
     else:
-        generator = generate_rag_response(request.message, trace_id)
+        generator = generate_rag_response(request.message, trace_id, session_id)
 
     return StreamingResponse(
         generator,
@@ -509,6 +535,7 @@ async def chat(request: ChatRequest):
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
             "X-Trace-ID": trace_id,
+            "X-Session-ID": session_id,
             "X-Accel-Buffering": "no",
             "Transfer-Encoding": "chunked",
         },

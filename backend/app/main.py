@@ -144,7 +144,7 @@ app.add_middleware(
     allow_credentials=False,  # Disabled for simpler CORS
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*", "X-Trace-Id"],
+    expose_headers=["*", "X-Trace-Id", "X-Session-ID"],
 )
 
 # Add trace ID middleware
