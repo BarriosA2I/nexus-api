@@ -263,6 +263,20 @@ def create_collection(client: QdrantClient, name: str, dry_run: bool = False) ->
             )
         )
         print(f"  Created collection '{name}' (size={EMBEDDING_DIMENSIONS}, distance=Cosine)")
+
+        # Create payload indexes for filtering
+        from qdrant_client.models import PayloadSchemaType
+        client.create_payload_index(
+            collection_name=name,
+            field_name="industry",
+            field_schema=PayloadSchemaType.KEYWORD
+        )
+        client.create_payload_index(
+            collection_name=name,
+            field_name="type",
+            field_schema=PayloadSchemaType.KEYWORD
+        )
+        print(f"  Created payload indexes (industry, type)")
         return True
 
     except Exception as e:

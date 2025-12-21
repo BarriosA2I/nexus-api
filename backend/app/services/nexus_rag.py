@@ -287,17 +287,18 @@ class NexusRAGClient:
                         ]
                     )
 
-                # Search
-                results = await self._client.search(
+                # Search using query_points (async client API)
+                response = await self._client.query_points(
                     collection_name=self._cfg.collection,
-                    query_vector=query_vector,
+                    query=query_vector,
                     query_filter=search_filter,
                     limit=top_k,
                     score_threshold=self._cfg.score_threshold,
                     with_payload=True,
                 )
 
-                # Parse results
+                # Parse results from QueryResponse
+                results = response.points if hasattr(response, 'points') else []
                 for r in results:
                     payload = r.payload or {}
                     content = str(payload.get("content", ""))
