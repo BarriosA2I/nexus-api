@@ -143,12 +143,22 @@ class ComponentHealth(BaseModel):
     details: Optional[Dict[str, Any]] = Field(default=None, description="Additional details")
 
 
+class QdrantRAGHealth(BaseModel):
+    """Qdrant RAG client health"""
+    enabled: bool = Field(default=False, description="Whether Qdrant RAG is enabled")
+    connected: bool = Field(default=False, description="Whether connected to Qdrant")
+    collection: Optional[str] = Field(default=None, description="Qdrant collection name")
+    embedder_loaded: bool = Field(default=False, description="Whether embedding model loaded")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+
+
 class RAGHealth(BaseModel):
     """RAG service health"""
     loaded: bool = Field(..., description="Whether RAG is loaded")
     chunks: int = Field(default=0, description="Number of loaded chunks")
     knowledge_files: List[str] = Field(default_factory=list, description="Loaded knowledge files")
     load_time_ms: Optional[int] = Field(default=None, description="Load time in milliseconds")
+    qdrant: Optional[QdrantRAGHealth] = Field(default=None, description="Qdrant RAG status")
 
 
 class CircuitBreakerHealth(BaseModel):

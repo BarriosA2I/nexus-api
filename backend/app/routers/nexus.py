@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 
 from ..config import settings
 from ..schemas import (
+    QdrantRAGHealth,
     ChatRequest,
     ChatMode,
     HealthResponse,
@@ -30,6 +31,7 @@ from ..services.job_store import get_job_store
 from ..services.ragnarok_bridge import get_ragnarok_bridge
 from ..services.circuit_breaker import circuit_registry, CircuitBreakerError
 from ..services.nexus_brain import generate_nexus_response, get_nexus_brain
+from ..services.nexus_rag import get_rag_client
 from ..services.event_publisher import get_event_publisher
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
@@ -641,6 +643,26 @@ async def health():
                 if cb.stats.last_failure_time else None,
         ))
 
+    # Get Qdrant RAG status
+    qdrant_health = None
+    try:
+        rag_client = await get_rag_client()
+        qdrant_health = QdrantRAGHealth(
+            enabled=rag_client.enabled,
+            connected=rag_client.enabled and rag_client._client is not None,
+            collection=rag_client._cfg.collection if rag_client._cfg else None,
+            embedder_loaded=rag_client._embedder is not None,
+            error=None
+        )
+    except Exception as e:
+        qdrant_health = QdrantRAGHealth(
+            enabled=False,
+            connected=False,
+            collection=None,
+            embedder_loaded=False,
+            error=str(e)
+        )
+
     return HealthResponse(
         status=status,
         uptime_seconds=round(time.time() - _start_time, 2),
@@ -651,6 +673,7 @@ async def health():
             chunks=rag_service.chunk_count,
             knowledge_files=rag_service.loaded_files,
             load_time_ms=rag_service.load_time_ms,
+            qdrant=qdrant_health,
         ),
         job_queue=ComponentHealth(
             status="running" if job_store.is_running else "stopped",
