@@ -16,6 +16,7 @@ from .config import settings
 from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
 from .services.rag_local import init_rag_service
 from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, get_brain_status
+from .services.nexus_rag import get_rag_client
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
 from .services.circuit_breaker import circuit_registry
@@ -112,12 +113,26 @@ async def lifespan(app: FastAPI):
     if not brain.is_available():
         logger.warning("Nexus Brain using FALLBACK mode - set ANTHROPIC_API_KEY for LLM responses")
 
-    # Initialize Research Oracle RAG (optional - gracefully degrades if unavailable)
+    # Initialize Nexus RAG client (new standalone async client - preferred)
     import os
     qdrant_url = os.getenv("QDRANT_URL")
+    if qdrant_url:
+        logger.info("Initializing Nexus RAG client...")
+        try:
+            rag_client = await get_rag_client()
+            if rag_client.enabled:
+                logger.info("✅ Nexus RAG client operational (Qdrant connected)")
+            else:
+                logger.info("⚠️ Nexus RAG client disabled (check QDRANT_URL)")
+        except Exception as e:
+            logger.warning(f"⚠️ Nexus RAG client unavailable: {e}")
+    else:
+        logger.info("Nexus RAG not configured (set QDRANT_URL to enable)")
+
+    # Initialize legacy Research Oracle RAG (fallback - optional)
     redis_url = os.getenv("REDIS_URL")
     if qdrant_url or redis_url:
-        logger.info("Initializing Research Oracle RAG...")
+        logger.info("Initializing legacy Research Oracle RAG...")
         try:
             rag_enabled = await initialize_nexus_brain_rag(
                 qdrant_url=qdrant_url,
@@ -125,13 +140,11 @@ async def lifespan(app: FastAPI):
                 rabbitmq_url=os.getenv("RABBITMQ_URL")
             )
             if rag_enabled:
-                logger.info("✅ Research Oracle RAG fully operational")
+                logger.info("✅ Legacy Research Oracle RAG available")
             else:
-                logger.info("⚠️ Research Oracle RAG partially available")
+                logger.info("⚠️ Legacy Research Oracle RAG partially available")
         except Exception as e:
-            logger.warning(f"⚠️ Research Oracle RAG unavailable: {e}")
-    else:
-        logger.info("Research Oracle RAG not configured (set QDRANT_URL and REDIS_URL to enable)")
+            logger.warning(f"⚠️ Legacy Research Oracle RAG unavailable: {e}")
 
     # Initialize RabbitMQ event publisher (optional - graceful degradation)
     rabbitmq_url = os.getenv("RABBITMQ_URL")

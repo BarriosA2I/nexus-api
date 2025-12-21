@@ -84,6 +84,15 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️  RAG dependencies not available ({e}) - using static knowledge only")
 
+# Import the new standalone RAG client (preferred for chat-time retrieval)
+try:
+    from app.services.nexus_rag import get_rag_client
+    NEXUS_RAG_AVAILABLE = True
+    logger.info("✅ Nexus RAG client available")
+except ImportError:
+    NEXUS_RAG_AVAILABLE = False
+    logger.info("Nexus RAG client not available - using legacy oracle")
+
 
 # =============================================================================
 # SYSTEM PROMPT - THE BRAIN (COMPANY-OMNISCIENT v2.0)
@@ -897,17 +906,37 @@ class NexusBrain:
         # Detect industry
         industry = detect_industry(message, conversation_history)
         
-        # Retrieve RAG context if available
+        # Retrieve RAG context - prefer new nexus_rag client over legacy oracle
         rag_context = None
-        if self.oracle_client and industry:
+        rag_context_str = ""
+
+        # Try new standalone RAG client first (simpler, async-native)
+        if NEXUS_RAG_AVAILABLE and industry:
+            try:
+                rag = await get_rag_client()
+                if rag.enabled:
+                    chunks = await rag.retrieve(query=message, industry=industry, limit=5)
+                    if chunks:
+                        rag_context_str = rag.format_context(chunks)
+                        logger.info(f"Nexus RAG: {len(chunks)} chunks for {industry}")
+            except Exception as e:
+                logger.warning(f"Nexus RAG retrieval failed: {e}")
+
+        # Fallback to legacy oracle client if nexus_rag didn't return results
+        if not rag_context_str and self.oracle_client and industry:
             rag_context = await self.oracle_client.retrieve_knowledge(
                 query=message,
                 industry=industry,
                 top_k=5
             )
-        
+
         # Build augmented prompt
-        system_prompt = build_augmented_prompt(NEXUS_SYSTEM_PROMPT, rag_context)
+        if rag_context_str:
+            # Use new RAG format directly
+            system_prompt = NEXUS_SYSTEM_PROMPT + "\n\n" + rag_context_str
+        else:
+            # Use legacy RAG context formatting
+            system_prompt = build_augmented_prompt(NEXUS_SYSTEM_PROMPT, rag_context)
         
         # Generate response
         response_chunks = []
