@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .config import settings
 from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
 from .services.rag_local import init_rag_service
-from .services.nexus_brain import get_nexus_brain
+from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, get_brain_status
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
 from .services.circuit_breaker import circuit_registry
@@ -104,12 +104,33 @@ async def lifespan(app: FastAPI):
     logger.info(f"Ragnarok mode: {ragnarok.mode.value}")
 
     # Initialize Nexus Brain (LLM)
-    logger.info("Initializing Nexus Brain...")
+    logger.info("Initializing Nexus Brain v4.0...")
     brain = get_nexus_brain()
     logger.info(f"Nexus Brain provider: {brain.get_provider()}")
     logger.info(f"Nexus Brain available: {brain.is_available()}")
     if not brain.is_available():
         logger.warning("Nexus Brain using FALLBACK mode - set ANTHROPIC_API_KEY for LLM responses")
+
+    # Initialize Research Oracle RAG (optional - gracefully degrades if unavailable)
+    import os
+    qdrant_url = os.getenv("QDRANT_URL")
+    redis_url = os.getenv("REDIS_URL")
+    if qdrant_url or redis_url:
+        logger.info("Initializing Research Oracle RAG...")
+        try:
+            rag_enabled = await initialize_nexus_brain_rag(
+                qdrant_url=qdrant_url,
+                redis_url=redis_url,
+                rabbitmq_url=os.getenv("RABBITMQ_URL")
+            )
+            if rag_enabled:
+                logger.info("✅ Research Oracle RAG fully operational")
+            else:
+                logger.info("⚠️ Research Oracle RAG partially available")
+        except Exception as e:
+            logger.warning(f"⚠️ Research Oracle RAG unavailable: {e}")
+    else:
+        logger.info("Research Oracle RAG not configured (set QDRANT_URL and REDIS_URL to enable)")
 
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.HOST}:{settings.PORT}")

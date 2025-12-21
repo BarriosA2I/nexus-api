@@ -24,3 +24,13 @@ python-multipart>=0.0.6
 
 # LLM Providers (Nexus Brain) - REQUIRED FOR CLAUDE
 anthropic>=0.39.0
+
+# RAG Components (Optional - Brain gracefully degrades if unavailable)
+# Uncomment these when you set up Qdrant Cloud and Redis Cloud:
+# qdrant-client>=1.7.0
+# sentence-transformers>=2.2.0
+redis>=5.0.0
+# aio-pika>=9.0.0
+
+# Scheduling (for Research Oracle)
+# APScheduler>=3.10.0
