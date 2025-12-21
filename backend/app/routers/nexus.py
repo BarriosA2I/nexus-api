@@ -650,8 +650,8 @@ async def health():
         qdrant_health = QdrantRAGHealth(
             enabled=rag_client.enabled,
             connected=rag_client.enabled and rag_client._client is not None,
-            collection=rag_client._cfg.collection if rag_client._cfg else None,
-            embedder_loaded=rag_client._embedder is not None,
+            collection=rag_client.collection_name if hasattr(rag_client, 'collection_name') else None,
+            embedder_loaded=rag_client.embedder_loaded,
             error=None
         )
     except Exception as e:
