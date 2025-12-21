@@ -455,39 +455,67 @@ class ResearchOracleClient:
         self._initialized = False
     
     async def initialize(self) -> bool:
-        """Initialize all connections. Returns True if successful."""
+        """Initialize all connections. Returns True if at least Qdrant works."""
         if not RAG_AVAILABLE:
-            logger.warning("⚠️  RAG not available - skipping initialization")
+            logger.warning("RAG not available - skipping initialization")
             return False
-        
+
+        qdrant_ok = False
+        redis_ok = False
+        rabbitmq_ok = False
+
+        # Qdrant (required for RAG)
         try:
-            # Qdrant
-            self._qdrant = AsyncQdrantClient(url=self.qdrant_url)
-            # Test connection
-            await self._qdrant.get_collections()
-            logger.info("✅ Qdrant connected")
-            
-            # Redis
-            self._redis = Redis.from_url(self.redis_url)
-            await self._redis.ping()
-            logger.info("✅ Redis connected")
-            
-            # RabbitMQ
-            self._rabbitmq_connection = await aio_pika.connect_robust(self.rabbitmq_url)
-            self._rabbitmq_channel = await self._rabbitmq_connection.channel()
-            logger.info("✅ RabbitMQ connected")
-            
-            # Embedding model (local, fast)
-            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("✅ Embedding model loaded")
-            
-            self._initialized = True
-            return True
-            
+            qdrant_api_key = os.environ.get("QDRANT_API_KEY")
+            self._qdrant = AsyncQdrantClient(url=self.qdrant_url, api_key=qdrant_api_key)
+            collections = await self._qdrant.get_collections()
+
+            # Check if nexus_knowledge collection exists
+            if any(c.name == self.collection_name for c in collections.collections):
+                qdrant_ok = True
+                logger.info(f"Qdrant connected - collection '{self.collection_name}' found")
+            else:
+                logger.warning(f"Qdrant connected but collection '{self.collection_name}' not found")
         except Exception as e:
-            logger.error(f"❌ RAG initialization failed: {e}")
-            self._initialized = False
+            logger.warning(f"Qdrant connection failed: {e}")
+
+        # Redis (optional - for caching)
+        try:
+            if self.redis_url and "localhost" not in self.redis_url:
+                self._redis = Redis.from_url(self.redis_url)
+                await self._redis.ping()
+                redis_ok = True
+                logger.info("Redis connected")
+        except Exception as e:
+            logger.info(f"Redis not available (optional): {e}")
+
+        # RabbitMQ (optional - for event publishing)
+        try:
+            if self.rabbitmq_url and "localhost" not in self.rabbitmq_url:
+                self._rabbitmq_connection = await aio_pika.connect_robust(self.rabbitmq_url)
+                self._rabbitmq_channel = await self._rabbitmq_connection.channel()
+                rabbitmq_ok = True
+                logger.info("RabbitMQ connected")
+        except Exception as e:
+            logger.info(f"RabbitMQ not available (optional): {e}")
+
+        # Embedding model (required for RAG)
+        try:
+            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.info("Embedding model loaded")
+        except Exception as e:
+            logger.error(f"Embedding model failed: {e}")
             return False
+
+        # RAG is enabled if Qdrant works
+        self._initialized = qdrant_ok
+
+        if self._initialized:
+            logger.info(f"RAG initialized (Qdrant: OK, Redis: {'OK' if redis_ok else 'N/A'}, RabbitMQ: {'OK' if rabbitmq_ok else 'N/A'})")
+        else:
+            logger.warning("RAG not initialized - Qdrant connection required")
+
+        return self._initialized
     
     async def close(self):
         """Close all connections."""
@@ -559,19 +587,23 @@ class ResearchOracleClient:
                     score=result.score
                 ))
             
-            # 2. Get cached scripts and terminology from Redis
+            # 2. Get cached scripts and terminology from Redis (if available)
             scripts = None
             terminology = None
-            
-            scripts_key = f"nexus:scripts:{industry}"
-            scripts_data = await self._redis.get(scripts_key)
-            if scripts_data:
-                scripts = json.loads(scripts_data)
-            
-            terminology_key = f"nexus:terminology:{industry}"
-            terminology_data = await self._redis.get(terminology_key)
-            if terminology_data:
-                terminology = json.loads(terminology_data)
+
+            if self._redis:
+                try:
+                    scripts_key = f"nexus:scripts:{industry}"
+                    scripts_data = await self._redis.get(scripts_key)
+                    if scripts_data:
+                        scripts = json.loads(scripts_data)
+
+                    terminology_key = f"nexus:terminology:{industry}"
+                    terminology_data = await self._redis.get(terminology_key)
+                    if terminology_data:
+                        terminology = json.loads(terminology_data)
+                except Exception as e:
+                    logger.debug(f"Redis lookup skipped: {e}")
             
             # 3. Calculate confidence score
             confidence = self._calculate_confidence(chunks, scripts)
