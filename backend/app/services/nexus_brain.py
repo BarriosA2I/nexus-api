@@ -95,6 +95,34 @@ except ImportError:
 
 
 # =============================================================================
+# LEAD CAPTURE TOOLS - Claude Tool Calling for Sales Automation
+# =============================================================================
+
+LEAD_CAPTURE_TOOLS = [
+    {
+        "name": "capture_lead",
+        "description": "Save prospect details when they express interest, ask for a demo, provide contact information, or mention their email address. ALWAYS call this tool when an email is detected.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Prospect's name if mentioned"},
+                "email": {"type": "string", "description": "Prospect's email address"},
+                "company": {"type": "string", "description": "Company name if mentioned"},
+                "pain_point": {"type": "string", "description": "Primary challenge or need mentioned"},
+                "industry": {"type": "string", "description": "Detected industry"},
+                "interest_level": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Perceived interest level based on message"
+                }
+            },
+            "required": ["email"]
+        }
+    }
+]
+
+
+# =============================================================================
 # SYSTEM PROMPT - THE BRAIN (COMPANY-OMNISCIENT v2.0)
 # =============================================================================
 
@@ -296,6 +324,22 @@ Stay professional. "I'm happy to help if you have questions, but let's keep it r
 
 **If they go off-topic:**
 Gently redirect. "Ha, I wish I could help with that! My expertise is business automation - anything I can help you with there?"
+
+## LEAD CAPTURE (CRITICAL)
+
+**IMPORTANT:** If the user provides an email address OR asks for a demo/consultation/meeting, you MUST call the capture_lead tool to save their information. This is revenue-critical.
+
+When you capture a lead:
+1. Call the capture_lead tool with all available information
+2. After capturing, acknowledge it naturally: "Got it! I've noted your contact. A Barrios A2I specialist will reach out within 24 hours."
+3. Continue the conversation - don't just stop after capturing
+
+Email patterns to watch for:
+- Explicit email: "my email is john@company.com"
+- Email in context: "reach me at sales@example.com"
+- Email mention: "you can contact me at test@test.com"
+
+ALWAYS capture the lead when an email is detected. This is the most important conversion action.
 """
 
 
@@ -970,9 +1014,9 @@ class NexusBrain:
         history: Optional[List[Dict]],
         system_prompt: str
     ) -> AsyncGenerator[str, None]:
-        """Generate response using Claude."""
+        """Generate response using Claude with lead capture tool calling."""
         messages = []
-        
+
         # Add conversation history
         if history:
             for msg in history[-10:]:  # Keep last 10 messages for context
@@ -980,19 +1024,42 @@ class NexusBrain:
                     "role": msg["role"],
                     "content": msg["content"]
                 })
-        
+
         # Add current message
         messages.append({"role": "user", "content": message})
-        
+
         try:
+            # Use streaming with tools for lead capture
             async with self.client.messages.stream(
                 model="claude-sonnet-4-20250514",
-                max_tokens=500,
+                max_tokens=1024,
                 system=system_prompt,
                 messages=messages,
+                tools=LEAD_CAPTURE_TOOLS,
             ) as stream:
                 async for text in stream.text_stream:
                     yield text
+
+                # After streaming, check for tool calls
+                final_message = await stream.get_final_message()
+
+                if final_message.stop_reason == "tool_use":
+                    for block in final_message.content:
+                        if hasattr(block, 'type') and block.type == "tool_use":
+                            if block.name == "capture_lead":
+                                lead_data = block.input
+                                email = lead_data.get('email', 'unknown')
+                                industry = lead_data.get('industry', 'unknown')
+                                interest = lead_data.get('interest_level', 'medium')
+                                pain_point = lead_data.get('pain_point', 'not specified')
+
+                                # Log the captured lead (will appear in Render logs)
+                                logger.info(f"🎯 LEAD CAPTURED: email={email} industry={industry} interest={interest} pain_point={pain_point}")
+                                logger.info(f"🎯 LEAD DATA: {json.dumps(lead_data)}")
+
+                                # Yield acknowledgment to user
+                                yield f"\n\n✅ **Got it!** I've noted your contact ({email}). A Barrios A2I specialist will reach out within 24 hours.\n\nNow, what's the biggest challenge you're facing that we could help automate?"
+
         except Exception as e:
             logger.error(f"Anthropic API error: {e}")
             yield "I'm having a moment - could you try that again?"
