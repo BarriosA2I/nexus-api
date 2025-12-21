@@ -35,3 +35,12 @@ opentelemetry-sdk>=1.20.0
 
 # LLM Providers (Nexus Brain)
 anthropic>=0.39.0
+
+# Session Management (Redis)
+redis>=5.0.0
+
+# Vector DB (Qdrant)
+qdrant-client>=1.7.0
+
+# OpenAI Embeddings
+openai>=1.0.0

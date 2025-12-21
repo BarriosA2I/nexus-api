@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 from dataclasses import dataclass
@@ -303,8 +304,8 @@ class NexusRAGClient:
                     payload = r.payload or {}
                     content = str(payload.get("content", ""))
 
-                    # Skip duplicates
-                    content_hash = hash(content[:100])
+                    # Skip duplicates (deterministic hash - consistent across processes)
+                    content_hash = hashlib.md5(content.strip().encode('utf-8')).hexdigest()
                     if content_hash in seen_content:
                         continue
                     seen_content.add(content_hash)

@@ -17,6 +17,7 @@ from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILA
 from .services.rag_local import init_rag_service
 from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, get_brain_status
 from .services.nexus_rag import get_rag_client
+from .services.semantic_router import get_semantic_router
 from .services.job_store import get_job_store
 from .services.ragnarok_bridge import get_ragnarok_bridge, ragnarok_job_handler
 from .services.circuit_breaker import circuit_registry
@@ -128,6 +129,18 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ Nexus RAG client unavailable: {e}")
     else:
         logger.info("Nexus RAG not configured (set QDRANT_URL to enable)")
+
+    # Warm up Semantic Router (pre-compute industry vectors on startup)
+    if qdrant_url:
+        logger.info("Warming up Semantic Router...")
+        try:
+            semantic_router = await get_semantic_router()
+            if semantic_router.is_ready:
+                logger.info("✅ Semantic Router warmed up (16 industries embedded)")
+            else:
+                logger.info("⚠️ Semantic Router not ready (falling back to regex)")
+        except Exception as e:
+            logger.warning(f"⚠️ Semantic Router warmup failed: {e}")
 
     # Initialize legacy Research Oracle RAG (fallback - optional)
     redis_url = os.getenv("REDIS_URL")

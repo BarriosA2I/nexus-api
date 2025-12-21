@@ -33,6 +33,8 @@ from ..services.circuit_breaker import circuit_registry, CircuitBreakerError
 from ..services.nexus_brain import generate_nexus_response, get_nexus_brain
 from ..services.nexus_rag import get_rag_client
 from ..services.event_publisher import get_event_publisher
+from ..services.session_manager import get_history, save_turn
+from ..services.semantic_router import detect_industry_semantic
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
 logger = logging.getLogger(__name__)
@@ -78,9 +80,8 @@ router = APIRouter(prefix="/api/nexus", tags=["nexus"])
 # Server start time for uptime calculation
 _start_time = time.time()
 
-# Conversation memory store - keeps history per session
-# Format: {session_id: [{"role": "user/assistant", "content": "..."}]}
-conversation_store: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+# NOTE: In-memory conversation_store replaced with Redis-backed session_manager
+# See: services/session_manager.py
 
 
 def generate_trace_id() -> str:
@@ -127,9 +128,12 @@ async def generate_rag_response(
     Uses Nexus Brain for intelligent, context-aware responses.
     Maintains conversation history per session for context continuity.
     Publishes conversation events for feedback loop.
+
+    v2.0: Uses Redis-backed session_manager + semantic industry detection.
     """
     start_time = time.time()
     detected_industry = None
+    confidence_score = 0.0
     full_response = ""
 
     try:
@@ -137,34 +141,27 @@ async def generate_rag_response(
         yield sse_thinking("One sec...")
         await asyncio.sleep(0.1)
 
-        # Get conversation history for this session
-        history = conversation_store[session_id]
+        # CRITICAL FIX: Load history BEFORE generating response (was passing [])
+        history = await get_history(session_id)
 
-        # Detect industry from message and history (for event publishing)
-        detected_industry = detect_industry_from_message(message, history)
-
-        # Add user message to history
-        history.append({"role": "user", "content": message})
+        # Semantic industry detection (replaces regex)
+        detected_industry, confidence_score = await detect_industry_semantic(message)
 
         # Log the provider and history size
         brain = get_nexus_brain()
         logger.info(
             f"[{trace_id}] Using Nexus Brain ({brain.get_provider()}) | "
-            f"History: {len(history)} | Industry: {detected_industry or 'unknown'}"
+            f"History: {len(history)} | Industry: {detected_industry or 'unknown'} (conf: {confidence_score:.2f})"
         )
 
         # Generate response using LLM brain with conversation history
-        async for chunk in generate_nexus_response(message, conversation_history=history[:-1]):
+        async for chunk in generate_nexus_response(message, conversation_history=history):
             full_response += chunk
             yield sse_delta(chunk)
             await asyncio.sleep(0.02)
 
-        # Save assistant response to history
-        history.append({"role": "assistant", "content": full_response})
-
-        # Keep history manageable (last 20 messages = 10 exchanges)
-        if len(history) > 20:
-            conversation_store[session_id] = history[-20:]
+        # CRITICAL FIX: Save turn AFTER response completes (Redis-backed)
+        await save_turn(session_id, message, full_response)
 
         # Determine next action based on message content
         message_lower = message.lower()
@@ -186,7 +183,7 @@ async def generate_rag_response(
                 user_message=message,
                 nexus_response=full_response,
                 detected_industry=detected_industry,
-                confidence_score=1.0,  # TODO: Get from brain when RAG enabled
+                confidence_score=confidence_score,
                 response_latency_ms=response_latency_ms,
             )
         except Exception as pub_error:
