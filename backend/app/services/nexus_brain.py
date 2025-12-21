@@ -1053,9 +1053,20 @@ class NexusBrain:
                                 interest = lead_data.get('interest_level', 'medium')
                                 pain_point = lead_data.get('pain_point', 'not specified')
 
-                                # Log the captured lead (will appear in Render logs)
-                                logger.info(f"🎯 LEAD CAPTURED: email={email} industry={industry} interest={interest} pain_point={pain_point}")
+                                # Log the captured lead
+                                logger.info(f"🎯 LEAD CAPTURED: email={email} industry={industry} interest={interest}")
                                 logger.info(f"🎯 LEAD DATA: {json.dumps(lead_data)}")
+
+                                # Process lead: Save to Notion + Send email notification
+                                try:
+                                    from .lead_storage import process_captured_lead
+
+                                    # Fire and forget - don't block response
+                                    asyncio.create_task(process_captured_lead(lead_data, "nexus_chat"))
+
+                                    logger.info(f"📤 Lead processing initiated for {email}")
+                                except Exception as e:
+                                    logger.error(f"Lead processing error: {e}")
 
                                 # Yield acknowledgment to user
                                 yield f"\n\n✅ **Got it!** I've noted your contact ({email}). A Barrios A2I specialist will reach out within 24 hours.\n\nNow, what's the biggest challenge you're facing that we could help automate?"
