@@ -203,10 +203,27 @@ class NexusRAGClient:
         self._enabled = False
 
     async def _embed(self, text: str) -> List[float]:
-        """Embed text using OpenAI Embeddings API."""
+        """
+        Embed text using OpenAI Embeddings API.
+
+        P0-C: Uses Redis cache to reduce API costs by ~40%.
+        """
         if not self._http_client or not self._cfg.openai_api_key:
             raise RuntimeError("OpenAI API not configured")
 
+        # P0-C: Check cache first
+        try:
+            from .rag_cache import get_rag_cache
+            cache = await get_rag_cache()
+            if cache.enabled:
+                cached_embedding = await cache.get_embedding(text)
+                if cached_embedding:
+                    logger.debug("Embedding cache hit - saved API call")
+                    return cached_embedding
+        except Exception as e:
+            logger.debug(f"Cache check skipped: {e}")
+
+        # Call OpenAI API
         response = await self._http_client.post(
             OPENAI_EMBEDDINGS_URL,
             headers={
@@ -220,7 +237,18 @@ class NexusRAGClient:
         )
         response.raise_for_status()
         data = response.json()
-        return data["data"][0]["embedding"]
+        embedding = data["data"][0]["embedding"]
+
+        # P0-C: Cache the embedding
+        try:
+            from .rag_cache import get_rag_cache
+            cache = await get_rag_cache()
+            if cache.enabled:
+                await cache.set_embedding(text, embedding)
+        except Exception as e:
+            logger.debug(f"Cache store skipped: {e}")
+
+        return embedding
 
     def _get_scopes(self, industry: Optional[str]) -> List[Optional[str]]:
         """

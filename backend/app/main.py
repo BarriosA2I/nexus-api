@@ -200,14 +200,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Add CORS middleware
+# Add CORS middleware - LOCKED DOWN for production security
+# P0-A: Use explicit allowed origins instead of wildcard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for SSE streaming
-    allow_credentials=False,  # Disabled for simpler CORS
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*", "X-Trace-Id", "X-Session-ID"],
+    allow_origins=settings.cors_origins_list,  # From CORS_ORIGINS env var
+    allow_credentials=True,  # Enable for session cookies
+    allow_methods=["GET", "POST", "OPTIONS"],  # Restrict to needed methods
+    allow_headers=["Content-Type", "Authorization", "X-Trace-Id", "X-Session-ID"],
+    expose_headers=["X-Trace-Id", "X-Session-ID"],
 )
 
 # Add trace ID middleware

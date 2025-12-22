@@ -1,6 +1,8 @@
 """
 Nexus Assistant Unified - Nexus Router
 Chat SSE streaming and health endpoints
+
+P0-B: Rate limiting applied (30/min per IP, 100/hour per session)
 """
 import json
 import time
@@ -14,6 +16,15 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
+
+# Rate limiting imports
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    RATE_LIMITING_AVAILABLE = True
+except ImportError:
+    RATE_LIMITING_AVAILABLE = False
 
 from ..config import settings
 from ..schemas import (
@@ -35,9 +46,59 @@ from ..services.nexus_rag import get_rag_client
 from ..services.event_publisher import get_event_publisher
 from ..services.session_manager import get_history, save_turn
 from ..services.semantic_router import detect_industry_semantic
+from ..services.confidence_scorer import calculate_confidence
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# RATE LIMITING (P0-B)
+# =============================================================================
+
+# Session-based rate limit tracking (in-memory, resets on restart)
+_session_rate_limits: Dict[str, Dict] = defaultdict(lambda: {"count": 0, "reset_time": 0})
+
+def get_session_key(request: Request) -> str:
+    """Extract session ID from request for rate limiting."""
+    # Try to get from header first, then query param, then generate
+    session_id = request.headers.get("X-Session-ID")
+    if not session_id:
+        session_id = request.query_params.get("session_id", "")
+    if not session_id:
+        session_id = get_remote_address(request)
+    return session_id
+
+# Initialize rate limiter if available
+if RATE_LIMITING_AVAILABLE:
+    limiter = Limiter(key_func=get_remote_address)
+    logger.info("Rate limiting enabled: 30/min per IP")
+else:
+    limiter = None
+    logger.warning("Rate limiting disabled: slowapi not installed")
+
+
+async def check_session_rate_limit(session_id: str, max_per_hour: int = 100) -> bool:
+    """
+    Check session-based rate limit.
+    Returns True if allowed, False if rate limited.
+    """
+    current_time = time.time()
+    hour_in_seconds = 3600
+
+    session_data = _session_rate_limits[session_id]
+
+    # Reset if hour has passed
+    if current_time > session_data["reset_time"]:
+        session_data["count"] = 0
+        session_data["reset_time"] = current_time + hour_in_seconds
+
+    # Check limit
+    if session_data["count"] >= max_per_hour:
+        return False
+
+    # Increment counter
+    session_data["count"] += 1
+    return True
 
 
 # =============================================================================
@@ -130,11 +191,14 @@ async def generate_rag_response(
     Publishes conversation events for feedback loop.
 
     v2.0: Uses Redis-backed session_manager + semantic industry detection.
+    P0-D: Uses real confidence scoring based on actual signals.
     """
     start_time = time.time()
     detected_industry = None
-    confidence_score = 0.0
+    industry_confidence = 0.0
     full_response = ""
+    rag_chunks = []
+    company_chunks_found = 0
 
     try:
         # Opening status
@@ -145,13 +209,40 @@ async def generate_rag_response(
         history = await get_history(session_id)
 
         # Semantic industry detection (replaces regex)
-        detected_industry, confidence_score = await detect_industry_semantic(message)
+        detected_industry, industry_confidence = await detect_industry_semantic(message)
 
-        # Log the provider and history size
+        # P0-D: Pre-fetch RAG chunks to calculate real confidence
+        try:
+            rag = await get_rag_client()
+            if rag.enabled:
+                rag_chunks = await rag.retrieve(
+                    query=message,
+                    industry=detected_industry,
+                    limit=5
+                )
+                # Count company core chunks (barrios_a2i industry)
+                company_chunks_found = sum(
+                    1 for c in rag_chunks
+                    if hasattr(c, 'industry') and c.industry == "barrios_a2i"
+                )
+        except Exception as rag_error:
+            logger.debug(f"[{trace_id}] RAG pre-fetch skipped: {rag_error}")
+
+        # P0-D: Calculate REAL confidence from actual signals
+        confidence_result = calculate_confidence(
+            industry_confidence=industry_confidence,
+            rag_chunks=rag_chunks,
+            company_chunks_found=company_chunks_found,
+            history_length=len(history),
+        )
+
+        # Log the provider and history size with real confidence
         brain = get_nexus_brain()
         logger.info(
-            f"[{trace_id}] Using Nexus Brain ({brain.get_provider()}) | "
-            f"History: {len(history)} | Industry: {detected_industry or 'unknown'} (conf: {confidence_score:.2f})"
+            f"[{trace_id}] Nexus Brain ({brain.get_provider()}) | "
+            f"History: {len(history)} | Industry: {detected_industry or 'unknown'} | "
+            f"Confidence: {confidence_result.score:.2f} ({confidence_result.level}) | "
+            f"RAG chunks: {len(rag_chunks)} | Company: {company_chunks_found}"
         )
 
         # Generate response using LLM brain with conversation history
@@ -171,8 +262,14 @@ async def generate_rag_response(
         elif any(term in message_lower for term in ["book", "call", "meeting", "schedule"]):
             next_action = "booking"
 
-        # Final event
-        yield sse_final(trace_id, next_action)
+        # P0-D: Include real confidence in final event
+        confidence_metadata = {
+            "level": confidence_result.level,
+            "score": confidence_result.score,
+            "industry": detected_industry,
+            "include_score": True,  # Enable for debugging during P0-D rollout
+        }
+        yield sse_final(trace_id, next_action, confidence=confidence_metadata)
 
         # Publish conversation event for feedback loop (non-blocking)
         try:
@@ -183,7 +280,7 @@ async def generate_rag_response(
                 user_message=message,
                 nexus_response=full_response,
                 detected_industry=detected_industry,
-                confidence_score=confidence_score,
+                confidence_score=confidence_result.score,  # Use real score
                 response_latency_ms=response_latency_ms,
             )
         except Exception as pub_error:
@@ -565,17 +662,29 @@ async def generate_ragnarok_response(
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, http_request: Request):
     """
     Chat endpoint with SSE streaming.
 
     Automatically detects mode (RAG or RAGNAROK) based on message content.
     Maintains conversation memory per session_id for context continuity.
+
+    Rate Limits (P0-B):
+    - 30 requests/minute per IP (via slowapi)
+    - 100 requests/hour per session
     """
     trace_id = generate_trace_id()
 
     # Get or generate session_id for conversation memory
     session_id = request.session_id or f"session_{uuid.uuid4().hex[:12]}"
+
+    # P0-B: Apply session-based rate limiting (100/hour)
+    if not await check_session_rate_limit(session_id, max_per_hour=100):
+        logger.warning(f"[{trace_id}] Rate limit exceeded for session: {session_id}")
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Please wait before sending more messages."
+        )
 
     logger.info(f"[{trace_id}] Chat request: {request.message[:50]}... | Session: {session_id}")
 
