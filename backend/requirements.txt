@@ -45,3 +45,17 @@ qdrant-client>=1.7.0
 # OpenAI Embeddings
 openai>=1.0.0
 slowapi>=0.1.9
+
+# LangGraph Orchestration (v5.0 APEX) - optional, graceful degradation
+# langgraph>=0.2.0
+# langgraph-checkpoint>=0.1.0
+# langgraph-checkpoint-postgres>=0.1.0
+# psycopg[binary]>=3.1.0
+
+# Creative Director Pipeline
+prometheus-client>=0.19.0
+aio-pika>=9.3.0
+
+# OpenTelemetry Instrumentation
+opentelemetry-instrumentation>=0.43b0
+opentelemetry-instrumentation-fastapi>=0.43b0

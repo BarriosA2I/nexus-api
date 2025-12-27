@@ -49,7 +49,22 @@ from ..services.semantic_router import detect_industry_semantic
 from ..services.confidence_scorer import calculate_confidence
 from ..utils.sse_helpers import sse_thinking, sse_delta, sse_final, sse_error
 
-logger = logging.getLogger(__name__)
+# Logger setup (must be before orchestrator imports that use it)
+logger = logging.getLogger("nexus.api")
+
+# v5.0 APEX Orchestrator (LangGraph-based)
+USE_APEX_ORCHESTRATOR = True  # Feature flag for gradual rollout
+
+if USE_APEX_ORCHESTRATOR:
+    try:
+        from ..orchestration import get_orchestrator
+        ORCHESTRATOR_AVAILABLE = True
+        logger.info("APEX Orchestrator available - v5.0 enabled")
+    except ImportError as e:
+        ORCHESTRATOR_AVAILABLE = False
+        logger.warning(f"APEX Orchestrator not available: {e}")
+else:
+    ORCHESTRATOR_AVAILABLE = False
 
 # =============================================================================
 # RATE LIMITING (P0-B)
@@ -288,6 +303,72 @@ async def generate_rag_response(
 
     except Exception as e:
         logger.error(f"[{trace_id}] Chat error: {e}")
+        yield sse_error("Something went wrong. Let me try again.")
+        yield sse_final(trace_id, "question")
+
+
+async def generate_apex_response(
+    message: str,
+    trace_id: str,
+    session_id: str,
+) -> AsyncGenerator[str, None]:
+    """
+    APEX v5.0 LangGraph-powered streaming generator.
+
+    Uses the NexusBrainOrchestrator for:
+    - Complexity classification (System 1/2)
+    - Thompson Sampling model selection
+    - Dual-scope RAG retrieval
+    - Streaming response generation
+
+    Falls back to legacy generate_rag_response if orchestrator unavailable.
+    """
+    if not ORCHESTRATOR_AVAILABLE:
+        logger.warning(f"[{trace_id}] APEX unavailable, falling back to legacy")
+        async for chunk in generate_rag_response(message, trace_id, session_id):
+            yield chunk
+        return
+
+    start_time = time.time()
+
+    try:
+        # Get conversation history
+        history = await get_history(session_id)
+        history_dicts = [
+            {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+            for msg in history
+        ]
+
+        # Get orchestrator and stream response
+        orchestrator = get_orchestrator()
+
+        logger.info(
+            f"[{trace_id}] APEX stream: session={session_id}, "
+            f"history={len(history_dicts)}"
+        )
+
+        full_response = ""
+        async for event in orchestrator.stream(session_id, message, history_dicts):
+            yield event
+            # Extract response text for saving (from delta events)
+            if '"type": "delta"' in event and '"text":' in event:
+                import json
+                try:
+                    data = json.loads(event.replace("data: ", "").strip())
+                    if data.get("type") == "delta":
+                        full_response += data.get("text", "")
+                except json.JSONDecodeError:
+                    pass
+
+        # Save conversation turn
+        if full_response:
+            await save_turn(session_id, message, full_response)
+
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"[{trace_id}] APEX complete: {len(full_response)} chars, {elapsed:.1f}ms")
+
+    except Exception as e:
+        logger.error(f"[{trace_id}] APEX error: {e}")
         yield sse_error("Something went wrong. Let me try again.")
         yield sse_final(trace_id, "question")
 
@@ -693,8 +774,12 @@ async def chat(request: ChatRequest, http_request: Request):
     logger.info(f"[{trace_id}] Mode: {mode.value}")
 
     # Select generator
+    # v5.0 APEX: Use LangGraph orchestrator for RAG mode if available
     if mode == ChatMode.RAGNAROK:
         generator = generate_ragnarok_response(request.message, trace_id)
+    elif USE_APEX_ORCHESTRATOR and ORCHESTRATOR_AVAILABLE:
+        logger.info(f"[{trace_id}] Using APEX v5.0 orchestrator")
+        generator = generate_apex_response(request.message, trace_id, session_id)
     else:
         generator = generate_rag_response(request.message, trace_id, session_id)
 

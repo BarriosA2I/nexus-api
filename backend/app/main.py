@@ -14,6 +14,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
 from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
+from .routers.creative_director import (
+    router as creative_director_router,
+    initialize_creative_director,
+    shutdown_creative_director,
+)
 from .services.rag_local import init_rag_service
 from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, get_brain_status
 from .services.nexus_rag import get_rag_client
@@ -171,6 +176,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Event publishing disabled (set RABBITMQ_URL to enable feedback loop)")
 
+    # Initialize Creative Director (6-agent video pipeline)
+    logger.info("Initializing Creative Director...")
+    try:
+        await initialize_creative_director(app)
+        logger.info("Creative Director initialized (6-agent video pipeline ready)")
+    except Exception as e:
+        logger.warning(f"Creative Director unavailable: {e}")
+
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.HOST}:{settings.PORT}")
     logger.info(f"API docs at http://{settings.HOST}:{settings.PORT}/docs")
@@ -180,6 +193,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Shutdown Creative Director
+    await shutdown_creative_director()
 
     # Close event publisher
     await close_event_publisher()
@@ -217,6 +233,7 @@ app.add_middleware(TraceIdMiddleware)
 # Include routers
 app.include_router(nexus_router)
 app.include_router(ragnarok_router)
+app.include_router(creative_director_router, prefix="/api/creative-director", tags=["Creative Director"])
 if INTAKE_AVAILABLE and intake_router:
     app.include_router(intake_router)
     logger.info("Intake router enabled")

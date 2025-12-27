@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: nexus-creative-director
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://barrios-landing.vercel.app,https://*.vercel.app
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: LOG_LEVEL
+        value: INFO
+    healthCheckPath: /
+    autoDeploy: true

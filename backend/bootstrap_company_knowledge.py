@@ -77,7 +77,7 @@ COMPANY_CORE: List[Dict[str, Any]] = [
         "quality_score": 1.0
     },
     {
-        "content": "Cinesite Autopilot: $1,500 one-time payment. Full video production automation pipeline. Includes branded intro/outro templates, batch video generation (up to 10 videos), asset library setup, and workflow training. Perfect for agencies and content creators.",
+        "content": "Cinesite Autopilot: $1,500 one-time payment. Self-optimizing landing pages that A/B test themselves in real-time. Includes conversion-optimized templates, automatic variant testing, performance analytics, and continuous optimization. Perfect for agencies and businesses wanting maximum conversion rates.",
         "industry": "barrios_a2i",
         "type": "pricing",
         "source_title": "Pricing Page",
