@@ -19,6 +19,7 @@ from .routers.creative_director import (
     initialize_creative_director,
     shutdown_creative_director,
 )
+from .routers.unified_chat import router as unified_chat_router
 from .services.rag_local import init_rag_service
 from .services.nexus_brain import get_nexus_brain, initialize_nexus_brain_rag, get_brain_status
 from .services.nexus_rag import get_rag_client
@@ -238,6 +239,10 @@ app.include_router(ragnarok_router)
 # Legacy: /api/legendary (frontend compatibility)
 app.include_router(creative_director_router, prefix="/api/creative-director", tags=["Creative Director"])
 app.include_router(creative_director_router, prefix="/api/legendary", tags=["Creative Director Legacy"])
+
+# Unified Chat API v2 - SuperGraph orchestration
+app.include_router(unified_chat_router, prefix="/api/v2", tags=["Unified Chat"])
+
 if INTAKE_AVAILABLE and intake_router:
     app.include_router(intake_router)
     logger.info("Intake router enabled")
