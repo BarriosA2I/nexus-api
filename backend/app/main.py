@@ -222,7 +222,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,  # From CORS_ORIGINS env var
     allow_credentials=True,  # Enable for session cookies
-    allow_methods=["GET", "POST", "OPTIONS"],  # Restrict to needed methods
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],  # Restrict to needed methods
     allow_headers=["Content-Type", "Authorization", "X-Trace-Id", "X-Session-ID"],
     expose_headers=["X-Trace-Id", "X-Session-ID"],
 )
@@ -233,7 +233,11 @@ app.add_middleware(TraceIdMiddleware)
 # Include routers
 app.include_router(nexus_router)
 app.include_router(ragnarok_router)
+# Mount Creative Director router at both paths for compatibility
+# Primary: /api/creative-director (new standard)
+# Legacy: /api/legendary (frontend compatibility)
 app.include_router(creative_director_router, prefix="/api/creative-director", tags=["Creative Director"])
+app.include_router(creative_director_router, prefix="/api/legendary", tags=["Creative Director Legacy"])
 if INTAKE_AVAILABLE and intake_router:
     app.include_router(intake_router)
     logger.info("Intake router enabled")
