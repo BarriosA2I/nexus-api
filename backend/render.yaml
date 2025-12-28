@@ -1,17 +1,56 @@
+# NEXUS SuperGraph - Production Deployment
+# PostgreSQL checkpointing + Redis caching + Full observability
+
+databases:
+  - name: nexus-postgres
+    plan: starter  # FREE tier
+    databaseName: nexus_db
+    user: nexus
+
 services:
+  # Redis for caching and session management
+  - type: redis
+    name: nexus-redis
+    plan: starter  # FREE tier
+    maxmemoryPolicy: allkeys-lru
+
+  # Main NEXUS SuperGraph API
   - type: web
-    name: nexus-creative-director
+    name: nexus-supergraph
     runtime: python
+    plan: standard  # $25/mo - required for production
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /api/v2/health
+    autoDeploy: true
     envVars:
+      # API Keys (set manually in dashboard)
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      # Database connection (auto-injected from nexus-postgres)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexus-postgres
+          property: connectionString
+      # Redis connection (auto-injected from nexus-redis)
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: nexus-redis
+          property: connectionString
+      # CORS for Vercel frontend
       - key: CORS_ORIGINS
-        value: https://barrios-landing.vercel.app,https://*.vercel.app
+        value: https://barrios-landing.vercel.app,https://*.vercel.app,http://localhost:3000
+      # Python version
       - key: PYTHON_VERSION
         value: "3.11.0"
+      # Environment
+      - key: ENVIRONMENT
+        value: production
       - key: LOG_LEVEL
         value: INFO
-    healthCheckPath: /
-    autoDeploy: true
+      # LangGraph checkpointing pool size
+      - key: CHECKPOINT_POOL_SIZE
+        value: "10"
