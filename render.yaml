@@ -1,19 +1,80 @@
+# Render Blueprint - NEXUS SuperGraph Production Deployment
+# https://render.com/docs/blueprint-spec
+
 services:
+  # ============================================================================
+  # NEXUS API - Main Application
+  # ============================================================================
   - type: web
-    name: nexus-api
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    name: nexus-supergraph
+    runtime: docker
+    region: oregon  # or ohio, frankfurt, singapore
+    plan: standard  # $25/mo - 1GB RAM, 1 CPU (upgrade to pro for production)
+
+    # Docker configuration
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Health check
+    healthCheckPath: /api/v2/health
+
+    # Environment variables
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
-      - key: CORS_ORIGINS
-        value: "https://barrios-landing.vercel.app,https://barriosa2i.com,http://localhost:3000"
+      # Database (auto-populated by Render)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexus-postgres
+          property: connectionString
+
+      # Application
+      - key: ENVIRONMENT
+        value: production
       - key: LOG_LEVEL
-        value: "INFO"
-      - key: RAGNAROK_MODE
-        value: "mock"
-      - key: LLM_PROVIDER
-        value: "mock"
-    healthCheckPath: /
+        value: INFO
+      - key: WORKERS
+        value: "2"
+
+      # API Keys (set in Render dashboard - DO NOT commit)
+      - key: ANTHROPIC_API_KEY
+        sync: false  # Must be set manually in dashboard
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PERPLEXITY_API_KEY
+        sync: false
+
+      # OpenTelemetry (optional - for Grafana Cloud, Honeycomb, etc.)
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_SERVICE_NAME
+        value: nexus-supergraph
+
+      # Checkpointing
+      - key: CHECKPOINT_POOL_SIZE
+        value: "10"
+
+      # CORS
+      - key: CORS_ORIGINS
+        value: "https://barrios-landing.vercel.app,https://www.barriosa2i.com,http://localhost:3000"
+
+    # Auto-deploy on push to main
+    autoDeploy: true
+    branch: main
+
+  # ============================================================================
+  # REDIS - Session Cache & Circuit Breaker State (Optional)
+  # ============================================================================
+  - type: redis
+    name: nexus-redis
+    plan: starter  # $0 - 25MB (upgrade for production)
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow all IPs (Render internal network)
+
+# ============================================================================
+# POSTGRESQL DATABASE
+# ============================================================================
+databases:
+  - name: nexus-postgres
+    plan: starter  # $0 - 1GB storage, 97 connections (upgrade for production)
+    region: oregon
+    postgresMajorVersion: "16"
+    ipAllowList: []  # Allow all IPs (Render internal network)

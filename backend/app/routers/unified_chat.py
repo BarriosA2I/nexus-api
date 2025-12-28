@@ -10,6 +10,8 @@ from typing import Optional, List, Dict, Any
 
 from ..orchestrator.supergraph import get_supergraph
 from ..orchestrator.state import create_initial_state
+from ..orchestrator.circuit_breaker import CircuitBreakerRegistry, CircuitState
+from ..orchestrator.metrics import get_metrics, get_metrics_content_type
 
 logger = logging.getLogger("nexus.unified_chat")
 router = APIRouter()
@@ -160,16 +162,109 @@ async def clear_session(session_id: str):
 
 @router.get("/health")
 async def health_check():
-    """Unified chat health check"""
+    """
+    Production health check endpoint.
+
+    Returns comprehensive system status for:
+    - Load balancer health checks
+    - Kubernetes liveness/readiness probes
+    - Monitoring dashboards
+    """
+    import os
+
     try:
         supergraph = await get_supergraph()
+        langgraph_enabled = supergraph is not None and not hasattr(supergraph, 'sessions')
+
+        # Check checkpointer status
+        checkpointer_status = "disabled"
+        if langgraph_enabled and hasattr(supergraph, 'checkpointer') and supergraph.checkpointer:
+            checkpointer_status = "postgresql"
+
+        # Get circuit breaker summary
+        registry = CircuitBreakerRegistry.get_instance()
+        circuits = registry.get_all_stats()
+        open_circuits = sum(1 for c in circuits.values() if c.get("state") == "open")
+
         return {
-            "status": "healthy",
+            "status": "healthy" if open_circuits == 0 else "degraded",
             "supergraph_available": supergraph is not None,
-            "langgraph_enabled": supergraph is not None and not hasattr(supergraph, 'sessions'),
+            "langgraph_enabled": langgraph_enabled,
+            "checkpointer": checkpointer_status,
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "circuits": {
+                "total": len(circuits),
+                "open": open_circuits,
+            },
         }
     except Exception as e:
         return {
-            "status": "degraded",
+            "status": "unhealthy",
             "error": str(e),
         }
+
+
+# ============================================================================
+# CIRCUIT BREAKER ENDPOINTS
+# ============================================================================
+
+@router.get("/circuits")
+async def get_circuit_breaker_stats():
+    """Get circuit breaker statistics for all workers"""
+    registry = CircuitBreakerRegistry.get_instance()
+    return {
+        "circuits": registry.get_all_stats(),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+@router.post("/circuits/{circuit_name}/reset")
+async def reset_circuit_breaker(circuit_name: str):
+    """Manually reset a circuit breaker (admin use)"""
+    registry = CircuitBreakerRegistry.get_instance()
+    breaker = registry.get(circuit_name)
+
+    if not breaker:
+        raise HTTPException(status_code=404, detail=f"Circuit '{circuit_name}' not found")
+
+    breaker.state = CircuitState.CLOSED
+    breaker.failures = 0
+    breaker.half_open_count = 0
+
+    return {
+        "status": "reset",
+        "circuit": circuit_name,
+        "new_state": breaker.state.value,
+    }
+
+
+@router.get("/circuits/{circuit_name}")
+async def get_circuit_breaker_status(circuit_name: str):
+    """Get status of a specific circuit breaker"""
+    registry = CircuitBreakerRegistry.get_instance()
+    breaker = registry.get(circuit_name)
+
+    if not breaker:
+        raise HTTPException(status_code=404, detail=f"Circuit '{circuit_name}' not found")
+
+    return breaker.get_stats()
+
+
+# ============================================================================
+# PROMETHEUS METRICS ENDPOINT
+# ============================================================================
+
+@router.get("/metrics")
+async def prometheus_metrics():
+    """
+    Prometheus metrics endpoint.
+
+    Returns metrics in Prometheus text format for scraping.
+    Configure Prometheus to scrape: http://localhost:8000/api/unified/metrics
+    """
+    from fastapi.responses import Response
+
+    return Response(
+        content=get_metrics(),
+        media_type=get_metrics_content_type()
+    )

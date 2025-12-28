@@ -1,6 +1,11 @@
 """
 NEXUS SuperGraph - Router Node
 Classifies intent and routes to appropriate subgraph
+
+Production features:
+- Dual-process routing (System 1: regex, System 2: LLM)
+- OpenTelemetry tracing
+- Prometheus metrics
 """
 import re
 import time
@@ -9,6 +14,8 @@ import os
 from typing import Literal, Tuple
 
 from .state import NexusState
+from .tracing import traced_node, traced_llm_call
+from .metrics import record_intent, record_llm_call, metered_node
 
 logger = logging.getLogger("nexus.router")
 
@@ -21,21 +28,31 @@ INTENT_PATTERNS = {
         r"\b(create|make|produce|generate|build)\b.{0,20}\b(video|ad|commercial)\b",
         r"\bragnarok\b",
         r"\b(neural|ai).{0,10}(ad|video|commercial)\b",
+        r"\b(promotional|marketing)\s*(video|content)\b",
     ],
     "market_research": [
-        r"\b(competitor|competition|market|research|analyze|analysis)\b",
-        r"\b(trends?|sentiment|industry)\b.{0,20}\b(research|analysis|report)\b",
+        r"\b(competitor|competition|competitive)\b",
+        r"\b(market|industry)\s*(research|analysis|intel|intelligence)\b",
+        r"\banalyze\b.{0,20}\b(competitor|market|industry)\b",
+        r"\b(trends?|sentiment)\b.{0,15}\b(analysis|report)\b",
         r"\btrinity\b",
-        r"\bwhat.{0,20}(competitors?|market)\b",
+        r"\bwhat.{0,15}(competitors?|market)\b",
+        r"\b(saas|software|tech|ecommerce|retail)\b.{0,15}\b(industry|market|competitors?)\b",
+        r"\b(who|what).{0,10}(competing|competition)\b",
+        r"\bresearch\b.{0,15}\b(competitors?|market)\b",
+        r"\b(compare|benchmark)\b.{0,15}\b(competitors?|industry)\b",
     ],
     "intake": [
         r"\b(consultation|consult|discuss|talk about|help me with)\b",
         r"\b(project|business|company|startup)\b.{0,20}\b(help|advice|guidance)\b",
         r"\b(what|how).{0,20}(services?|offerings?|do you do)\b",
+        r"\bget started\b",
+        r"\bpricing|quote|cost\b",
     ],
     "escalate": [
         r"\b(human|person|real person|speak to someone|manager)\b",
         r"\b(not helpful|frustrated|angry|upset)\b",
+        r"\bsupport\s*ticket\b",
     ],
 }
 
@@ -44,6 +61,8 @@ FAST_PATH_CONFIDENCE = 0.85  # Use System 1 if above this
 ESCALATION_THRESHOLD = 0.5   # Escalate to System 2 if below this
 
 
+@traced_node("router")
+@metered_node("router")
 async def router_node(state: NexusState) -> dict:
     """
     Router Node - Entry point for all user messages.

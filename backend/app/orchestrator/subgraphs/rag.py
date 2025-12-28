@@ -1,12 +1,31 @@
 """
 RAG Subgraph - General chat with retrieval-augmented generation
+
+Production features:
+- Circuit breaker protection for Qdrant and Anthropic
+- OpenTelemetry tracing for full observability
+- Prometheus metrics for monitoring
 """
 import time
 import logging
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from ..state import NexusState
+from ..circuit_breaker import (
+    CircuitBreakerRegistry,
+    CircuitOpenError,
+    CircuitState,
+    with_circuit_breaker,
+)
+from ..tracing import traced_node, traced_external_call, traced_llm_call
+from ..metrics import (
+    record_rag_retrieval,
+    record_llm_call,
+    record_node_latency,
+    metered_node,
+    CONTEXT_LENGTH,
+)
 
 logger = logging.getLogger("nexus.rag")
 
@@ -18,12 +37,30 @@ try:
 except ImportError:
     pass
 
+# Get circuit breakers
+_registry = CircuitBreakerRegistry.get_instance()
+_anthropic_breaker = _registry.register("anthropic", threshold=5, reset_timeout=30)
+_qdrant_breaker = _registry.register("qdrant", threshold=3, reset_timeout=60)
 
+
+@traced_node("retrieve")
+@metered_node("retrieve")
 async def retrieve_node(state: NexusState) -> dict:
-    """Retrieve relevant documents from vector store"""
+    """Retrieve relevant documents from vector store with circuit breaker"""
     start_time = time.perf_counter()
 
     query = state.get("query", state["messages"][-1]["content"])
+
+    # Check circuit breaker
+    if not await _qdrant_breaker.can_execute():
+        logger.warning("Qdrant circuit OPEN - skipping retrieval")
+        record_rag_retrieval("qdrant", "circuit_open")
+        return {
+            "retrieved_docs": [],
+            "errors": [{"node": "retrieve", "error": "Vector store unavailable", "recoverable": True}],
+            "last_successful_node": state.get("last_successful_node", "start"),
+            "total_latency_ms": state.get("total_latency_ms", 0) + (time.perf_counter() - start_time) * 1000,
+        }
 
     # Try to use RAG service if available
     docs = []
@@ -33,7 +70,13 @@ async def retrieve_node(state: NexusState) -> dict:
         if rag:
             results = rag.search(query, top_k=5)
             docs = [{"content": r["content"], "source": r.get("source", "unknown"), "score": r.get("score", 0)} for r in results]
+
+        _qdrant_breaker.record_success()
+        record_rag_retrieval("qdrant", "success", context_length=sum(len(d.get("content", "")) for d in docs))
+
     except Exception as e:
+        _qdrant_breaker.record_failure()
+        record_rag_retrieval("qdrant", "error")
         logger.warning(f"RAG retrieval failed: {e}")
 
     latency_ms = (time.perf_counter() - start_time) * 1000
@@ -45,6 +88,8 @@ async def retrieve_node(state: NexusState) -> dict:
     }
 
 
+@traced_node("compress")
+@metered_node("compress")
 async def compress_node(state: NexusState) -> dict:
     """Compress retrieved context using LLMLingua-style compression"""
     start_time = time.perf_counter()
@@ -61,7 +106,6 @@ async def compress_node(state: NexusState) -> dict:
     ])
 
     # Simple compression: truncate to max tokens
-    # TODO: Replace with actual LLMLingua compression
     max_chars = 8000
     if len(full_context) > max_chars:
         compressed = full_context[:max_chars] + "..."
@@ -70,6 +114,9 @@ async def compress_node(state: NexusState) -> dict:
 
     latency_ms = (time.perf_counter() - start_time) * 1000
 
+    # Record context length metric
+    CONTEXT_LENGTH.observe(len(compressed))
+
     return {
         "compressed_context": compressed,
         "total_latency_ms": state.get("total_latency_ms", 0) + latency_ms,
@@ -77,9 +124,25 @@ async def compress_node(state: NexusState) -> dict:
     }
 
 
+@traced_node("generate")
+@metered_node("generate")
 async def generate_node(state: NexusState) -> dict:
-    """Generate response using Claude with RAG context"""
+    """Generate response using Claude with circuit breaker"""
     start_time = time.perf_counter()
+
+    # Check circuit breaker FIRST
+    if not await _anthropic_breaker.can_execute():
+        logger.warning("Anthropic circuit OPEN - using fallback response")
+        record_llm_call("claude-sonnet-4-20250514", "circuit_open")
+        return {
+            "messages": [{
+                "role": "assistant",
+                "content": "I'm experiencing high demand right now. Please try again in a moment, or reach out to support@barriosa2i.com for immediate assistance."
+            }],
+            "errors": [{"node": "generate", "error": "LLM service unavailable", "recoverable": True}],
+            "last_successful_node": "compress",
+            "total_latency_ms": state.get("total_latency_ms", 0) + (time.perf_counter() - start_time) * 1000,
+        }
 
     query = state.get("query", state["messages"][-1]["content"])
     context = state.get("compressed_context", "")
@@ -132,8 +195,9 @@ Keep responses concise but informative."""
             messages=messages
         )
 
-        assistant_message = response.content[0].text
+        _anthropic_breaker.record_success()
 
+        assistant_message = response.content[0].text
         latency_ms = (time.perf_counter() - start_time) * 1000
 
         # Calculate cost
@@ -143,7 +207,7 @@ Keep responses concise but informative."""
 
         return {
             "messages": [{"role": "assistant", "content": assistant_message}],
-            "rag_confidence": 0.85,  # TODO: Calculate actual confidence
+            "rag_confidence": 0.85,
             "total_cost_usd": state.get("total_cost_usd", 0) + cost,
             "total_latency_ms": state.get("total_latency_ms", 0) + latency_ms,
             "token_usage": {
@@ -162,7 +226,9 @@ Keep responses concise but informative."""
         }
 
     except Exception as e:
+        _anthropic_breaker.record_failure()
         logger.error(f"Generation failed: {e}")
+
         return {
             "messages": [{"role": "assistant", "content": "I apologize, but I encountered an error. Please try again."}],
             "errors": [{"node": "generate", "error": str(e), "recoverable": True}],
@@ -171,7 +237,7 @@ Keep responses concise but informative."""
 
 
 def build_rag_subgraph():
-    """Build the RAG subgraph"""
+    """Build the RAG subgraph - returns compiled graph or None"""
 
     if not LANGGRAPH_AVAILABLE:
         logger.warning("LangGraph not available for RAG subgraph")

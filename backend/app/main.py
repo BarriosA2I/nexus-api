@@ -1,8 +1,15 @@
 """
 Nexus Assistant Unified - Main Application
 FastAPI application with lifecycle management
+
+Production features:
+- OpenTelemetry distributed tracing
+- Prometheus metrics endpoint
+- PostgreSQL checkpointing via LangGraph
+- Circuit breaker protection
 """
 import logging
+import os
 import random
 import sys
 import time
@@ -13,6 +20,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
+
+# OpenTelemetry instrumentation (optional - graceful degradation)
+_otel_enabled = False
+if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        _otel_enabled = True
+    except ImportError:
+        pass
 from .routers import nexus_router, ragnarok_router, intake_router, INTAKE_AVAILABLE
 from .routers.creative_director import (
     router as creative_director_router,
@@ -185,15 +201,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Creative Director unavailable: {e}")
 
+    # Initialize SuperGraph (LangGraph orchestration with PostgreSQL checkpointing)
+    logger.info("Initializing NEXUS SuperGraph...")
+    try:
+        from .orchestrator.supergraph import get_supergraph
+        supergraph = await get_supergraph()
+        if supergraph:
+            logger.info("NEXUS SuperGraph initialized (LangGraph enabled)")
+            if hasattr(supergraph, 'checkpointer') and supergraph.checkpointer:
+                logger.info("PostgreSQL checkpointing enabled")
+        else:
+            logger.info("NEXUS SuperGraph using fallback orchestrator")
+    except Exception as e:
+        logger.warning(f"SuperGraph initialization failed (using fallback): {e}")
+
     logger.info("=" * 60)
     logger.info(f"Server ready at http://{settings.HOST}:{settings.PORT}")
     logger.info(f"API docs at http://{settings.HOST}:{settings.PORT}/docs")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
     logger.info("=" * 60)
 
     yield  # Application runs here
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Shutdown SuperGraph (closes PostgreSQL checkpointer)
+    try:
+        from .orchestrator.supergraph import shutdown_supergraph
+        await shutdown_supergraph()
+        logger.info("SuperGraph shutdown complete")
+    except Exception as e:
+        logger.warning(f"SuperGraph shutdown error: {e}")
 
     # Shutdown Creative Director
     await shutdown_creative_director()
@@ -216,6 +255,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Apply OpenTelemetry instrumentation (if configured)
+if _otel_enabled:
+    try:
+        FastAPIInstrumentor.instrument_app(app)
+        logger.info("OpenTelemetry FastAPI instrumentation enabled")
+    except Exception as e:
+        logger.warning(f"OpenTelemetry instrumentation failed: {e}")
 
 # Add CORS middleware - LOCKED DOWN for production security
 # P0-A: Use explicit allowed origins instead of wildcard
