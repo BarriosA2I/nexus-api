@@ -65,7 +65,7 @@ services:
   # ============================================================================
   - type: redis
     name: nexus-redis
-    plan: starter  # $0 - 25MB (upgrade for production)
+    plan: free  # $0 - 25MB (upgrade for production)
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []  # Allow all IPs (Render internal network)
 
@@ -74,7 +74,7 @@ services:
 # ============================================================================
 databases:
   - name: nexus-postgres
-    plan: starter  # $0 - 1GB storage, 97 connections (upgrade for production)
+    plan: free  # $0 - 1GB storage, 97 connections (upgrade for production)
     region: oregon
     postgresMajorVersion: "16"
     ipAllowList: []  # Allow all IPs (Render internal network)
