@@ -42,6 +42,7 @@ class Industry(Enum):
     MANUFACTURING = "manufacturing"
     RETAIL = "retail"
     PROFESSIONAL_SERVICES = "professional_services"
+    RESTAURANTS = "restaurants"
 
 
 class ObjectionType(Enum):
@@ -306,6 +307,25 @@ INDUSTRY_USE_CASES: Dict[Industry, Dict[str, Any]] = {
         "quick_win": "Automated scheduling - reduces coordination time 70%",
         "roi_benchmark": "5-8 hours saved per week per consultant",
         "automation_priority": "Scheduling and proposals"
+    },
+    Industry.RESTAURANTS: {
+        "top_uses": [
+            "Reservation management and confirmations",
+            "Order-taking automation (phone/online)",
+            "Inventory tracking and reorder alerts",
+            "Staff scheduling optimization",
+            "Review request and response automation"
+        ],
+        "pain_points": [
+            "High labor costs (30-35% of revenue)",
+            "Missed phone orders during rush",
+            "No-show reservations (15-20% average)",
+            "Inventory waste and stockouts",
+            "Inconsistent customer experience"
+        ],
+        "quick_win": "Automated phone ordering - captures orders you're missing during rush",
+        "roi_benchmark": "25-30% reduction in labor costs, 30% faster service",
+        "automation_priority": "Order taking and reservations"
     }
 }
 
@@ -534,6 +554,21 @@ CASE_STUDIES: List[Dict[str, Any]] = [
             "cost_saved": "$187,000/year"
         },
         "quote": "Zero order errors in 6 months - unprecedented for us",
+        "source": "Industry Benchmark"
+    },
+    {
+        "company": "Bella Vista Bistro",
+        "industry": "Restaurants",
+        "challenge": "Missing 30% of phone orders during dinner rush, high labor costs",
+        "solution": "AI phone ordering and reservation management",
+        "results": {
+            "roi": "892%",
+            "payback": "5 weeks",
+            "orders_captured": "40% more phone orders",
+            "labor_reduction": "28% reduction in front-of-house labor",
+            "service_speed": "35% faster table turns"
+        },
+        "quote": "We're capturing orders at 9pm on Saturday that we used to miss entirely",
         "source": "Industry Benchmark"
     }
 ]
@@ -939,7 +974,8 @@ def _detect_industry_from_query(query: str) -> Optional[str]:
         "saas": ["saas", "software", "subscription", "platform", "app", "startup"],
         "manufacturing": ["manufacturing", "factory", "production", "supply chain", "warehouse"],
         "retail": ["retail", "store", "shop", "inventory", "pos"],
-        "professional_services": ["consulting", "professional services", "consultant", "advisory"]
+        "professional_services": ["consulting", "professional services", "consultant", "advisory"],
+        "restaurants": ["restaurant", "cafe", "bar", "food service", "hospitality", "catering", "diner", "bistro", "pizzeria", "kitchen"]
     }
 
     for industry, keywords in industry_keywords.items():
