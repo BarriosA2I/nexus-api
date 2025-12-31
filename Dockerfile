@@ -67,21 +67,23 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
-# Expose port
-EXPOSE 8000
+# Expose port (Render sets PORT dynamically, default 10000)
+EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v2/health || exit 1
+# Health check - use localhost:$PORT but Docker build needs static value
+# Render's own health check will use /api/v2/health on the assigned port
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-10000}/api/v2/health || exit 1
 
 # Start with Gunicorn + Uvicorn workers
-CMD ["gunicorn", "app.main:app", \
-    "--bind", "0.0.0.0:8000", \
-    "--workers", "2", \
-    "--worker-class", "uvicorn.workers.UvicornWorker", \
-    "--timeout", "120", \
-    "--keep-alive", "5", \
-    "--access-logfile", "-", \
-    "--error-logfile", "-", \
-    "--capture-output", \
-    "--enable-stdio-inheritance"]
+# CRITICAL: Use $PORT from Render (defaults to 10000 if not set)
+CMD gunicorn app.main:app \
+    --bind 0.0.0.0:${PORT:-10000} \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --timeout 120 \
+    --keep-alive 5 \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output \
+    --enable-stdio-inheritance
