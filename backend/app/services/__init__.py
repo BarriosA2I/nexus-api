@@ -15,6 +15,24 @@ try:
 except ImportError:
     VOICEOVER_AVAILABLE = False
 
+# Knowledge Base (200+ stats for data-backed responses)
+try:
+    from .nexus_knowledge_base import (
+        get_contextual_knowledge,
+        get_objection_response,
+        get_relevant_case_study,
+        get_random_stat,
+        Industry,
+        ObjectionType,
+        QUICK_STATS,
+        INDUSTRY_USE_CASES,
+        ROI_STATISTICS,
+        CASE_STUDIES,
+    )
+    KNOWLEDGE_BASE_AVAILABLE = True
+except ImportError:
+    KNOWLEDGE_BASE_AVAILABLE = False
+
 __all__ = [
     "CircuitBreaker",
     "CircuitBreakerRegistry",
@@ -22,4 +40,5 @@ __all__ = [
     "JobStore",
     "RagnarokBridge",
     "VOICEOVER_AVAILABLE",
+    "KNOWLEDGE_BASE_AVAILABLE",
 ]

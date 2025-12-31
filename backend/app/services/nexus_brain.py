@@ -93,6 +93,23 @@ except ImportError:
     NEXUS_RAG_AVAILABLE = False
     logger.info("Nexus RAG client not available - using legacy oracle")
 
+# Import Knowledge Base for data-backed responses
+try:
+    from app.services.nexus_knowledge_base import (
+        get_contextual_knowledge,
+        get_objection_response,
+        get_relevant_case_study,
+        get_random_stat,
+        QUICK_STATS,
+        INDUSTRY_USE_CASES,
+        Industry
+    )
+    KNOWLEDGE_BASE_AVAILABLE = True
+    logger.info("✅ Nexus Knowledge Base loaded (200+ stats)")
+except ImportError as e:
+    KNOWLEDGE_BASE_AVAILABLE = False
+    logger.warning(f"Knowledge Base not available: {e}")
+
 
 # =============================================================================
 # LEAD CAPTURE TOOLS - Claude Tool Calling for Sales Automation
@@ -221,6 +238,34 @@ KNOWLEDGE_AUGMENTATION_TEMPLATE = """
 ---
 USE THE ABOVE DATA to give SPECIFIC answers with REAL numbers and statistics.
 This makes you sound like an expert who truly understands their industry.
+"""
+
+# =============================================================================
+# KNOWLEDGE BASE AUGMENTATION TEMPLATE
+# =============================================================================
+
+KNOWLEDGE_BASE_TEMPLATE = """
+## 📊 DATA-BACKED INTELLIGENCE
+(Use these stats naturally in conversation - don't dump them all at once)
+
+### Quick Stats to Cite
+{quick_stats}
+
+### Relevant Case Study
+{case_study}
+
+### Industry-Specific Data
+{industry_data}
+
+### If Handling Objection
+{objection_data}
+
+---
+USAGE RULES:
+1. Cite 1-2 stats MAX per response (don't overwhelm)
+2. Use stats to back up claims, not as the main content
+3. Case studies work great for social proof
+4. Match stats to what they're asking about
 """
 
 
@@ -674,6 +719,80 @@ def build_augmented_prompt(
     return base_prompt + "\n\n" + knowledge_section
 
 
+def build_knowledge_base_augmentation(
+    message: str,
+    industry: Optional[str] = None
+) -> str:
+    """
+    Build knowledge base augmentation from static data.
+
+    Uses the 200+ stats knowledge base for data-backed responses.
+    Falls back gracefully if knowledge base not available.
+    """
+    if not KNOWLEDGE_BASE_AVAILABLE:
+        return ""
+
+    try:
+        # Get contextual knowledge
+        context = {"industry": industry} if industry else {}
+        knowledge = get_contextual_knowledge(message, context)
+
+        # Format quick stats
+        quick_stats_str = "(No specific stats matched)"
+        if knowledge.get("quick_facts"):
+            stats_lines = []
+            for fact in knowledge["quick_facts"][:3]:
+                stats_lines.append(f"• {fact['stat']} ({fact['source']})")
+            quick_stats_str = "\n".join(stats_lines)
+
+        # Format case study
+        case_study_str = "(No matching case study)"
+        case_study = knowledge.get("case_study")
+        if case_study:
+            results = case_study.get("results", {})
+            case_study_str = (
+                f"**{case_study.get('company')}** ({case_study.get('industry')})\n"
+                f"• ROI: {results.get('roi', 'N/A')}\n"
+                f"• Payback: {results.get('payback', 'N/A')}\n"
+                f"• Quote: \"{case_study.get('quote', '')}\""
+            )
+
+        # Format industry data
+        industry_str = "(No industry detected)"
+        industry_data = knowledge.get("industry_data")
+        if industry_data:
+            industry_str = (
+                f"**Quick Win:** {industry_data.get('quick_win', 'N/A')}\n"
+                f"**ROI Benchmark:** {industry_data.get('roi_benchmark', 'N/A')}\n"
+                f"**Top Pain Points:** {', '.join(industry_data.get('pain_points', [])[:3])}"
+            )
+
+        # Format objection response
+        objection_str = "(No objection detected)"
+        objection_data = knowledge.get("objection_response")
+        if objection_data:
+            data_points = objection_data.get("data", [])[:2]
+            objection_str = (
+                f"**Key Stats:**\n" + "\n".join(f"• {d}" for d in data_points) + "\n"
+                f"**Reframe:** {objection_data.get('reframe', '')}\n"
+                f"**Follow-up Question:** {objection_data.get('question', '')}"
+            )
+
+        augmentation = KNOWLEDGE_BASE_TEMPLATE.format(
+            quick_stats=quick_stats_str,
+            case_study=case_study_str,
+            industry_data=industry_str,
+            objection_data=objection_str
+        )
+
+        logger.debug(f"Knowledge base augmentation built for industry={industry}")
+        return augmentation
+
+    except Exception as e:
+        logger.warning(f"Knowledge base augmentation failed: {e}")
+        return ""
+
+
 # =============================================================================
 # NEXUS BRAIN (RAG-ENHANCED)
 # =============================================================================
@@ -830,6 +949,12 @@ class NexusBrain:
         else:
             # Use legacy RAG context formatting
             system_prompt = build_augmented_prompt(NEXUS_SYSTEM_PROMPT, rag_context)
+
+        # Add knowledge base augmentation (always available, static data)
+        kb_augmentation = build_knowledge_base_augmentation(message, industry)
+        if kb_augmentation:
+            system_prompt = system_prompt + "\n\n" + kb_augmentation
+            logger.info(f"📊 Knowledge base augmentation added for query")
         
         # Generate response
         response_chunks = []
@@ -1069,6 +1194,7 @@ async def get_brain_status() -> Dict[str, Any]:
         "provider": brain.get_provider(),
         "llm_available": brain.is_available(),
         "rag_enabled": brain.is_rag_enabled(),
+        "knowledge_base_loaded": KNOWLEDGE_BASE_AVAILABLE,
         "qdrant_connected": False,
         "redis_connected": False,
         "rabbitmq_connected": False
