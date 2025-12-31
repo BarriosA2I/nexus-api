@@ -3,9 +3,10 @@ NEXUS BRAIN v5.0 APEX - RAG Node
 =================================
 Third node in pipeline: retrieves knowledge chunks from Qdrant.
 
-Implements dual-scope RAG:
+Implements dual-scope RAG + spreading activation:
 1. Always retrieves barrios_a2i chunks (company knowledge)
 2. Also retrieves detected industry chunks
+3. For MODERATE+ complexity: graph traversal via spreading activation
 
 This ensures Nexus ALWAYS knows about Barrios A2I services, pricing, etc.
 """
@@ -14,8 +15,20 @@ import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
+import numpy as np
 
 from ..state import ConversationState, RAGResult, RetrievedChunk
+
+# Spreading activation integration (optional, graceful fallback)
+try:
+    from ...services.spreading_activation import (
+        SpreadingActivationRetriever,
+        SpreadingActivationConfig,
+        ActivatedFact,
+    )
+    SPREADING_ACTIVATION_AVAILABLE = True
+except ImportError:
+    SPREADING_ACTIVATION_AVAILABLE = False
 
 logger = logging.getLogger("nexus.node.rag")
 
@@ -28,6 +41,43 @@ COLLECTION_NAME = os.getenv("NEXUS_KNOWLEDGE_COLLECTION", "nexus_knowledge")
 # RAG settings
 MAX_CHUNKS = 5
 MIN_SCORE = 0.15
+
+# Neo4j settings for spreading activation (optional)
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+# Spreading activation singleton
+_spreading_activation: Optional['SpreadingActivationRetriever'] = None
+
+
+def _get_spreading_activation() -> Optional['SpreadingActivationRetriever']:
+    """Get or create spreading activation retriever singleton."""
+    global _spreading_activation
+
+    if not SPREADING_ACTIVATION_AVAILABLE:
+        return None
+
+    if _spreading_activation is None and NEO4J_URI and NEO4J_PASSWORD:
+        try:
+            config = SpreadingActivationConfig(
+                max_hops=3,
+                decay_factor=0.7,
+                activation_threshold=0.1,
+                top_k_facts=10,
+                use_neo4j=True,
+            )
+            _spreading_activation = SpreadingActivationRetriever(
+                neo4j_uri=NEO4J_URI,
+                neo4j_auth=(NEO4J_USER, NEO4J_PASSWORD),
+                config=config,
+            )
+            logger.info("Spreading activation retriever initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize spreading activation: {e}")
+            return None
+
+    return _spreading_activation
 
 
 async def get_embedding(text: str) -> List[float]:
@@ -121,13 +171,67 @@ async def search_qdrant(
         return []
 
 
+def _rrf_fusion(
+    list1: List[RetrievedChunk],
+    list2: List[RetrievedChunk],
+    k: int = 60
+) -> List[RetrievedChunk]:
+    """
+    Reciprocal Rank Fusion to combine ranked lists.
+
+    RRF score = sum(1 / (k + rank_i)) across all lists
+
+    Args:
+        list1: First ranked list (vector search)
+        list2: Second ranked list (graph search)
+        k: Smoothing constant (default 60)
+
+    Returns:
+        Combined and re-ranked list
+    """
+    # Build content -> chunk mapping (use first occurrence)
+    chunk_map: Dict[str, RetrievedChunk] = {}
+    rrf_scores: Dict[str, float] = {}
+
+    # Score list1
+    for rank, chunk in enumerate(list1):
+        content = chunk.content
+        if content not in chunk_map:
+            chunk_map[content] = chunk
+            rrf_scores[content] = 0.0
+        rrf_scores[content] += 1.0 / (k + rank + 1)
+
+    # Score list2
+    for rank, chunk in enumerate(list2):
+        content = chunk.content
+        if content not in chunk_map:
+            chunk_map[content] = chunk
+            rrf_scores[content] = 0.0
+        rrf_scores[content] += 1.0 / (k + rank + 1)
+
+    # Sort by RRF score
+    sorted_contents = sorted(rrf_scores.keys(), key=lambda c: rrf_scores[c], reverse=True)
+
+    # Update scores and return
+    result = []
+    for content in sorted_contents:
+        chunk = chunk_map[content]
+        # Update chunk score to reflect RRF ranking
+        chunk.score = rrf_scores[content]
+        result.append(chunk)
+
+    return result[:MAX_CHUNKS * 2]  # Return more than usual for RRF
+
+
 async def rag_node(state: ConversationState) -> Dict[str, Any]:
     """
     RAG node: retrieve relevant knowledge chunks.
 
-    Implements dual-scope retrieval:
+    Implements dual-scope retrieval + spreading activation:
     1. Always includes barrios_a2i industry (company knowledge)
     2. Also includes detected industry from classifier
+    3. For MODERATE+ complexity: graph traversal via spreading activation
+    4. RRF fusion combines vector + graph results
 
     This ensures Nexus ALWAYS knows about Barrios A2I pricing, services, etc.
 
@@ -140,6 +244,7 @@ async def rag_node(state: ConversationState) -> Dict[str, Any]:
     start_time = time.time()
     message = state["message"]
     detected_industry = state.get("detected_industry", "general")
+    complexity = state.get("complexity_level", "simple")
 
     logger.info(f"RAG retrieval for: {message[:50]}...")
 
@@ -157,7 +262,42 @@ async def rag_node(state: ConversationState) -> Dict[str, Any]:
             logger.error("Failed to get embedding")
             return _empty_result(state, start_time)
 
+        # Vector search (primary)
         chunks = await search_qdrant(embedding, industries)
+
+        # Spreading activation for MODERATE+ complexity
+        graph_chunks: List[RetrievedChunk] = []
+        if complexity in ("moderate", "complex") and SPREADING_ACTIVATION_AVAILABLE:
+            sa_retriever = _get_spreading_activation()
+            if sa_retriever:
+                try:
+                    # Extract seed entities from message
+                    seed_entities = sa_retriever.extract_seed_entities(message)
+                    if seed_entities:
+                        facts = await sa_retriever.retrieve(
+                            query=message,
+                            seed_entities=seed_entities,
+                            max_hops=2 if complexity == "moderate" else 3,
+                        )
+                        # Convert facts to chunks
+                        for fact in facts:
+                            graph_chunks.append(RetrievedChunk(
+                                content=f"{fact.head} {fact.relation} {fact.tail}",
+                                score=fact.activation_score,
+                                industry="knowledge_graph",
+                                chunk_type="graph_fact",
+                                source_title=f"Graph hop {fact.hop_distance}",
+                                priority="high" if fact.activation_score > 0.5 else "normal",
+                                quality_score=fact.activation_score,
+                            ))
+                        logger.info(f"Spreading activation: {len(graph_chunks)} facts from {len(seed_entities)} seeds")
+                except Exception as e:
+                    logger.warning(f"Spreading activation failed: {e}")
+
+        # RRF fusion if we have both sources
+        if graph_chunks:
+            chunks = _rrf_fusion(chunks, graph_chunks, k=60)
+            logger.debug(f"RRF fusion: {len(chunks)} combined chunks")
 
     except Exception as e:
         logger.error(f"RAG retrieval failed: {e}")

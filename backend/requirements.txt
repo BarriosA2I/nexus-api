@@ -86,3 +86,10 @@ google-auth>=2.23.0
 
 # Rate limiting
 slowapi>=0.1.9
+
+# ============================================================================
+# NEURAL RAG BRAIN v3.0 - COGNITIVE LAYER
+# ============================================================================
+neo4j>=5.0.0                  # Graph DB driver for spreading activation
+torch>=2.0.0                  # ACAN attention network
+networkx>=3.0                 # Graph algorithms for AGoT DAG
