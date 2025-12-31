@@ -619,42 +619,38 @@ def build_augmented_prompt(
     if not rag_context or not rag_context.chunks:
         return base_prompt
     
-    # Group chunks by type
+    # Group chunks by type - plain text, no bullets, just pick top items
     pain_points = []
     automation_opps = []
     objection_handlers = []
-    starters = []
     terminology_items = []
     roi_items = []
-    
+
     for chunk in rag_context.chunks:
-        if chunk.chunk_type == "pain_point":
-            pain_points.append(f"• {chunk.content}")
-        elif chunk.chunk_type == "automation":
-            automation_opps.append(f"• {chunk.content}")
-        elif chunk.chunk_type == "objection":
-            objection_handlers.append(f"• {chunk.content}")
-        elif chunk.chunk_type == "script":
-            starters.append(f"• {chunk.content}")
-        elif chunk.chunk_type == "terminology":
-            terminology_items.append(f"• {chunk.content}")
-        elif chunk.chunk_type == "roi":
-            roi_items.append(f"• {chunk.content}")
-    
-    # Add terminology from Redis cache
+        if chunk.chunk_type == "pain_point" and len(pain_points) < 2:
+            pain_points.append(chunk.content)
+        elif chunk.chunk_type == "automation" and len(automation_opps) < 2:
+            automation_opps.append(chunk.content)
+        elif chunk.chunk_type == "objection" and len(objection_handlers) < 1:
+            objection_handlers.append(chunk.content)
+        elif chunk.chunk_type == "terminology" and len(terminology_items) < 2:
+            terminology_items.append(chunk.content)
+        elif chunk.chunk_type == "roi" and len(roi_items) < 1:
+            roi_items.append(chunk.content)
+
+    # Add terminology from Redis cache - plain text
     if rag_context.terminology:
-        for term, definition in list(rag_context.terminology.items())[:10]:
-            terminology_items.append(f"• **{term}**: {definition}")
-    
-    # Format knowledge augmentation
+        for term, definition in list(rag_context.terminology.items())[:2]:
+            terminology_items.append(f"{term}: {definition}")
+
+    # Format knowledge augmentation - plain text, comma-separated
     knowledge_section = KNOWLEDGE_AUGMENTATION_TEMPLATE.format(
         industry=rag_context.industry.replace("_", " ").title(),
-        pain_points="\n".join(pain_points) if pain_points else "(Use general knowledge)",
-        automation_opportunities="\n".join(automation_opps) if automation_opps else "(Use general knowledge)",
-        objection_handlers="\n".join(objection_handlers) if objection_handlers else "(Use standard objection handling)",
-        conversation_starters="\n".join(starters) if starters else "(Use standard openers)",
-        terminology="\n".join(terminology_items) if terminology_items else "(Use standard terms)",
-        roi_data="\n".join(roi_items) if roi_items else "(Use general ROI ranges)"
+        pain_points="; ".join(pain_points) if pain_points else "general business challenges",
+        automation_opportunities="; ".join(automation_opps) if automation_opps else "standard automation",
+        objection_handlers="; ".join(objection_handlers) if objection_handlers else "standard handling",
+        terminology="; ".join(terminology_items) if terminology_items else "standard terms",
+        roi_data="; ".join(roi_items) if roi_items else "typical ROI ranges"
     )
     
     return base_prompt + "\n\n" + knowledge_section
@@ -678,45 +674,42 @@ def build_knowledge_base_augmentation(
         context = {"industry": industry} if industry else {}
         knowledge = get_contextual_knowledge(message, context)
 
-        # Format quick stats
-        quick_stats_str = "(No specific stats matched)"
+        # Format quick stats - plain text, no bullets
+        quick_stats_str = "None matched"
         if knowledge.get("quick_facts"):
-            stats_lines = []
-            for fact in knowledge["quick_facts"][:3]:
-                stats_lines.append(f"• {fact['stat']} ({fact['source']})")
-            quick_stats_str = "\n".join(stats_lines)
+            # Just pick ONE stat to cite
+            fact = knowledge["quick_facts"][0]
+            quick_stats_str = f"{fact['stat']} (source: {fact['source']})"
 
-        # Format case study
-        case_study_str = "(No matching case study)"
+        # Format case study - plain text, no markdown
+        case_study_str = "None matched"
         case_study = knowledge.get("case_study")
         if case_study:
             results = case_study.get("results", {})
             case_study_str = (
-                f"**{case_study.get('company')}** ({case_study.get('industry')})\n"
-                f"• ROI: {results.get('roi', 'N/A')}\n"
-                f"• Payback: {results.get('payback', 'N/A')}\n"
-                f"• Quote: \"{case_study.get('quote', '')}\""
+                f"{case_study.get('company')} ({case_study.get('industry')}) - "
+                f"ROI: {results.get('roi', 'N/A')}, Payback: {results.get('payback', 'N/A')}"
             )
 
-        # Format industry data
-        industry_str = "(No industry detected)"
+        # Format industry data - plain text
+        industry_str = "None detected"
         industry_data = knowledge.get("industry_data")
         if industry_data:
             industry_str = (
-                f"**Quick Win:** {industry_data.get('quick_win', 'N/A')}\n"
-                f"**ROI Benchmark:** {industry_data.get('roi_benchmark', 'N/A')}\n"
-                f"**Top Pain Points:** {', '.join(industry_data.get('pain_points', [])[:3])}"
+                f"Quick win: {industry_data.get('quick_win', 'N/A')}. "
+                f"Typical ROI: {industry_data.get('roi_benchmark', 'N/A')}. "
+                f"Pain points: {', '.join(industry_data.get('pain_points', [])[:2])}"
             )
 
-        # Format objection response
-        objection_str = "(No objection detected)"
+        # Format objection response - plain text
+        objection_str = "None detected"
         objection_data = knowledge.get("objection_response")
         if objection_data:
-            data_points = objection_data.get("data", [])[:2]
+            data_point = objection_data.get("data", [""])[0] if objection_data.get("data") else ""
             objection_str = (
-                f"**Key Stats:**\n" + "\n".join(f"• {d}" for d in data_points) + "\n"
-                f"**Reframe:** {objection_data.get('reframe', '')}\n"
-                f"**Follow-up Question:** {objection_data.get('question', '')}"
+                f"Key stat: {data_point}. "
+                f"Reframe: {objection_data.get('reframe', '')}. "
+                f"Question: {objection_data.get('question', '')}"
             )
 
         augmentation = KNOWLEDGE_BASE_TEMPLATE.format(
