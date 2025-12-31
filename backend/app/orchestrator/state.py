@@ -85,7 +85,7 @@ class NexusState(TypedDict, total=False):
     # ─────────────────────────────────────────────────────────────────────────
     errors: Annotated[List[Dict[str, Any]], operator.add]  # Append-only
     last_successful_node: str
-    checkpoint_id: Optional[str]
+    recovery_checkpoint: Optional[str]  # Renamed from checkpoint_id (reserved by LangGraph)
 
     # ─────────────────────────────────────────────────────────────────────────
     # CIRCUIT BREAKER STATES
@@ -150,7 +150,7 @@ def create_initial_state(session_id: str, user_id: str, message: str) -> NexusSt
         # Error handling
         errors=[],
         last_successful_node="start",
-        checkpoint_id=None,
+        recovery_checkpoint=None,
 
         # Circuit breakers
         circuit_breaker_states={},
