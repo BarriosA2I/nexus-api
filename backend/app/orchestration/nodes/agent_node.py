@@ -101,17 +101,15 @@ def build_messages(
 
 async def generate_response(
     state: ConversationState,
-    stream: bool = False,
-) -> AsyncGenerator[str, None] | str:
+) -> str:
     """
-    Generate response using Anthropic API.
+    Generate response using Anthropic API (non-streaming).
 
     Args:
         state: Current conversation state
-        stream: Whether to stream response
 
-    Yields/Returns:
-        Response chunks if streaming, full response if not
+    Returns:
+        Full response text
     """
     if not ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY not configured")
@@ -127,25 +125,51 @@ async def generate_response(
     # Create client
     client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
-    if stream:
-        async with client.messages.stream(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
-            system=system_prompt,
-            messages=messages,
-        ) as response:
-            async for text in response.text_stream:
-                yield text
-    else:
-        response = await client.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
-            system=system_prompt,
-            messages=messages,
-        )
-        return response.content[0].text
+    response = await client.messages.create(
+        model=model,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        system=system_prompt,
+        messages=messages,
+    )
+    return response.content[0].text
+
+
+async def generate_response_stream(
+    state: ConversationState,
+) -> AsyncGenerator[str, None]:
+    """
+    Generate response using Anthropic API (streaming).
+
+    Args:
+        state: Current conversation state
+
+    Yields:
+        Response text chunks
+    """
+    if not ANTHROPIC_API_KEY:
+        raise ValueError("ANTHROPIC_API_KEY not configured")
+
+    # Get selected model
+    model = state.get("selected_model", DEFAULT_MODEL)
+    chunks = state.get("context_chunks", [])
+
+    # Build prompts
+    system_prompt = build_system_prompt(chunks)
+    messages = build_messages(state, system_prompt)
+
+    # Create client
+    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+    async with client.messages.stream(
+        model=model,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        system=system_prompt,
+        messages=messages,
+    ) as response:
+        async for text in response.text_stream:
+            yield text
 
 
 async def agent_node(state: ConversationState) -> Dict[str, Any]:
